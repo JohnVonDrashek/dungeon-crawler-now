@@ -1996,116 +1996,282 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private hudText!: Phaser.GameObjects.Text;
+  // HUD Elements
+  private hudContainer!: Phaser.GameObjects.Container;
+  private floorText!: Phaser.GameObjects.Text;
+  private hpBarBg!: Phaser.GameObjects.Graphics;
+  private hpBarFill!: Phaser.GameObjects.Graphics;
+  private hpText!: Phaser.GameObjects.Text;
+  private xpBarBg!: Phaser.GameObjects.Graphics;
+  private xpBarFill!: Phaser.GameObjects.Graphics;
+  private levelText!: Phaser.GameObjects.Text;
+  private statsText!: Phaser.GameObjects.Text;
   private goldText!: Phaser.GameObjects.Text;
+  private enemyText!: Phaser.GameObjects.Text;
+  private statPointsText!: Phaser.GameObjects.Text;
   private weaponHUD!: Phaser.GameObjects.Container;
   private weaponIcon!: Phaser.GameObjects.Sprite;
   private weaponText!: Phaser.GameObjects.Text;
 
   private createHUD(): void {
-    this.hudText = this.add.text(10, 10, '', {
-      fontSize: '14px',
+    const panelX = 12;
+    const panelY = 12;
+    const panelWidth = 200;
+
+    // Main HUD container
+    this.hudContainer = this.add.container(panelX, panelY);
+    this.hudContainer.setScrollFactor(0);
+    this.hudContainer.setDepth(100);
+
+    // Panel background
+    const panelBg = this.add.graphics();
+    panelBg.fillStyle(0x000000, 0.7);
+    panelBg.fillRoundedRect(0, 0, panelWidth, 130, 4);
+    panelBg.lineStyle(1, 0x444444, 0.6);
+    panelBg.strokeRoundedRect(0, 0, panelWidth, 130, 4);
+    this.hudContainer.add(panelBg);
+
+    // Corner accents
+    const corners = this.add.graphics();
+    corners.lineStyle(2, 0xff6600, 0.7);
+    // Top-left
+    corners.beginPath();
+    corners.moveTo(0, 10);
+    corners.lineTo(0, 0);
+    corners.lineTo(10, 0);
+    corners.strokePath();
+    // Top-right
+    corners.beginPath();
+    corners.moveTo(panelWidth - 10, 0);
+    corners.lineTo(panelWidth, 0);
+    corners.lineTo(panelWidth, 10);
+    corners.strokePath();
+    this.hudContainer.add(corners);
+
+    // Floor/World text
+    this.floorText = this.add.text(panelWidth / 2, 12, '', {
+      fontSize: '11px',
+      fontFamily: 'Cinzel, Georgia, serif',
       color: '#ffffff',
-      backgroundColor: '#00000080',
-      padding: { x: 8, y: 4 },
     });
-    this.hudText.setScrollFactor(0);
-    this.hudText.setDepth(100);
+    this.floorText.setOrigin(0.5, 0);
+    this.hudContainer.add(this.floorText);
 
-    // Gold display
-    this.goldText = this.add.text(10, 70, '', {
-      fontSize: '14px',
-      color: '#ffd700',
-      backgroundColor: '#00000080',
-      padding: { x: 8, y: 4 },
-    });
-    this.goldText.setScrollFactor(0);
-    this.goldText.setDepth(100);
+    // Divider line under floor text
+    const divider = this.add.graphics();
+    divider.lineStyle(1, 0x444444, 0.5);
+    divider.lineBetween(10, 28, panelWidth - 10, 28);
+    this.hudContainer.add(divider);
 
-    // Weapon HUD in bottom-right
-    this.weaponHUD = this.add.container(
-      this.cameras.main.width - 10,
-      this.cameras.main.height - 60
-    );
-    this.weaponHUD.setScrollFactor(0);
-    this.weaponHUD.setDepth(100);
-
-    // Background for weapon display
-    const weaponBg = this.add.rectangle(0, 0, 120, 50, 0x000000, 0.5);
-    weaponBg.setOrigin(1, 1);
-
-    // Weapon icon
-    const weapon = this.player.getWeapon();
-    this.weaponIcon = this.add.sprite(-100, -25, weapon.stats.texture);
-    this.weaponIcon.setScale(1.5);
-    const rarityColors = [0xffffff, 0x00ff00, 0x0088ff, 0xaa00ff, 0xffaa00];
-    this.weaponIcon.setTint(rarityColors[weapon.rarity]);
-
-    // Weapon text
-    this.weaponText = this.add.text(-80, -38, weapon.getDisplayName(), {
+    // HP Label
+    const hpLabel = this.add.text(10, 34, 'HP', {
       fontSize: '10px',
-      color: '#ffffff',
-      wordWrap: { width: 75 },
+      fontFamily: 'Roboto Mono, monospace',
+      color: '#888888',
     });
+    this.hudContainer.add(hpLabel);
 
-    this.weaponHUD.add([weaponBg, this.weaponIcon, this.weaponText]);
+    // HP Bar background
+    this.hpBarBg = this.add.graphics();
+    this.hpBarBg.fillStyle(0x1a1a1a, 1);
+    this.hpBarBg.fillRoundedRect(10, 46, panelWidth - 20, 12, 2);
+    this.hpBarBg.lineStyle(1, 0x333333, 1);
+    this.hpBarBg.strokeRoundedRect(10, 46, panelWidth - 20, 12, 2);
+    this.hudContainer.add(this.hpBarBg);
 
-    // Listen for equipment changes to update weapon display
+    // HP Bar fill
+    this.hpBarFill = this.add.graphics();
+    this.hudContainer.add(this.hpBarFill);
+
+    // HP Text overlay
+    this.hpText = this.add.text(panelWidth / 2, 52, '', {
+      fontSize: '9px',
+      fontFamily: 'Roboto Mono, monospace',
+      color: '#ffffff',
+    });
+    this.hpText.setOrigin(0.5);
+    this.hudContainer.add(this.hpText);
+
+    // Level & XP
+    this.levelText = this.add.text(10, 62, '', {
+      fontSize: '10px',
+      fontFamily: 'Roboto Mono, monospace',
+      color: '#888888',
+    });
+    this.hudContainer.add(this.levelText);
+
+    // XP Bar background
+    this.xpBarBg = this.add.graphics();
+    this.xpBarBg.fillStyle(0x1a1a1a, 1);
+    this.xpBarBg.fillRoundedRect(10, 74, panelWidth - 20, 8, 2);
+    this.xpBarBg.lineStyle(1, 0x333333, 1);
+    this.xpBarBg.strokeRoundedRect(10, 74, panelWidth - 20, 8, 2);
+    this.hudContainer.add(this.xpBarBg);
+
+    // XP Bar fill
+    this.xpBarFill = this.add.graphics();
+    this.hudContainer.add(this.xpBarFill);
+
+    // Stats text
+    this.statsText = this.add.text(10, 88, '', {
+      fontSize: '10px',
+      fontFamily: 'Roboto Mono, monospace',
+      color: '#aaaaaa',
+    });
+    this.hudContainer.add(this.statsText);
+
+    // Enemy count
+    this.enemyText = this.add.text(10, 102, '', {
+      fontSize: '10px',
+      fontFamily: 'Roboto Mono, monospace',
+      color: '#666666',
+    });
+    this.hudContainer.add(this.enemyText);
+
+    // Stat points notification (hidden by default)
+    this.statPointsText = this.add.text(10, 116, '', {
+      fontSize: '10px',
+      fontFamily: 'Roboto Mono, monospace',
+      color: '#ff6600',
+    });
+    this.hudContainer.add(this.statPointsText);
+
+    // Gold display - integrated into main panel
+    const goldIcon = this.add.text(panelWidth - 10, 34, '◆', {
+      fontSize: '10px',
+      color: '#ffd700',
+    });
+    goldIcon.setOrigin(1, 0);
+    this.hudContainer.add(goldIcon);
+
+    this.goldText = this.add.text(panelWidth - 22, 34, '0', {
+      fontSize: '10px',
+      fontFamily: 'Roboto Mono, monospace',
+      color: '#ffd700',
+    });
+    this.goldText.setOrigin(1, 0);
+    this.hudContainer.add(this.goldText);
+
+    // Weapon HUD - bottom-right
+    this.createWeaponHUD();
+
+    // Listen for equipment changes
     this.events.on('equipmentChanged', () => {
       this.updateWeaponHUD();
     });
+  }
 
-    const instructions = this.add.text(
-      10,
-      this.cameras.main.height - 40,
-      'WASD: Move | SPACE: Dodge | CLICK: Attack | E: Inventory',
-      {
-        fontSize: '12px',
-        color: '#aaaaaa',
-        backgroundColor: '#00000080',
-        padding: { x: 8, y: 4 },
-      }
-    );
-    instructions.setScrollFactor(0);
-    instructions.setDepth(100);
+  private createWeaponHUD(): void {
+    const cam = this.cameras.main;
+    this.weaponHUD = this.add.container(cam.width - 12, cam.height - 12);
+    this.weaponHUD.setScrollFactor(0);
+    this.weaponHUD.setDepth(100);
+
+    // Background
+    const bg = this.add.graphics();
+    bg.fillStyle(0x000000, 0.7);
+    bg.fillRoundedRect(-130, -55, 130, 55, 4);
+    bg.lineStyle(1, 0x444444, 0.6);
+    bg.strokeRoundedRect(-130, -55, 130, 55, 4);
+    this.weaponHUD.add(bg);
+
+    // Corner accent
+    const corner = this.add.graphics();
+    corner.lineStyle(2, 0xff6600, 0.7);
+    corner.beginPath();
+    corner.moveTo(0, -10);
+    corner.lineTo(0, 0);
+    corner.lineTo(-10, 0);
+    corner.strokePath();
+    this.weaponHUD.add(corner);
+
+    // Weapon icon
+    const weapon = this.player.getWeapon();
+    this.weaponIcon = this.add.sprite(-105, -28, weapon.stats.texture);
+    this.weaponIcon.setScale(1.8);
+    const rarityColors = [0xcccccc, 0x22cc22, 0x2288ff, 0xaa44ff, 0xffaa00];
+    this.weaponIcon.setTint(rarityColors[weapon.rarity]);
+    this.weaponHUD.add(this.weaponIcon);
+
+    // Weapon name
+    this.weaponText = this.add.text(-80, -40, weapon.getDisplayName(), {
+      fontSize: '10px',
+      fontFamily: 'Roboto Mono, monospace',
+      color: '#ffffff',
+      wordWrap: { width: 70 },
+    });
+    this.weaponHUD.add(this.weaponText);
+
+    // Weapon label
+    const weaponLabel = this.add.text(-80, -10, 'WEAPON', {
+      fontSize: '8px',
+      fontFamily: 'Roboto Mono, monospace',
+      color: '#666666',
+    });
+    this.weaponHUD.add(weaponLabel);
   }
 
   private updateHUD(): void {
     const enemyCount = this.enemies.getChildren().filter((e) => e.active).length;
-    const itemCount = this.player.inventory.getItemCount();
+    const panelWidth = 200;
+    const barWidth = panelWidth - 20;
 
-    // Display world name + floor, or just stage for legacy mode
-    let floorText: string;
+    // Floor/World text
+    let floorStr: string;
     if (this.currentWorld) {
       const worldConfig = getWorldConfig(this.currentWorld);
-      const bossLabel = this.isBossFloor ? ' (BOSS)' : '';
-      floorText = `${worldConfig.name} - Floor ${this.floor}${bossLabel}`;
+      const bossLabel = this.isBossFloor ? ' ⚔' : '';
+      floorStr = `${worldConfig.name} ${this.floor}${bossLabel}`;
     } else {
-      floorText = this.isBossFloor ? `Stage: ${this.floor} (BOSS)` : `Stage: ${this.floor}`;
+      floorStr = this.isBossFloor ? `Stage ${this.floor} ⚔` : `Stage ${this.floor}`;
+    }
+    this.floorText.setText(floorStr);
+
+    // HP Bar
+    const hpPercent = Math.max(0, this.player.hp / this.player.maxHp);
+    this.hpBarFill.clear();
+    if (hpPercent > 0) {
+      // Color based on HP percentage
+      let hpColor = 0x22cc44; // Green
+      if (hpPercent < 0.3) hpColor = 0xcc2222; // Red
+      else if (hpPercent < 0.6) hpColor = 0xccaa22; // Yellow
+
+      this.hpBarFill.fillStyle(hpColor, 1);
+      this.hpBarFill.fillRoundedRect(10, 46, Math.max(4, barWidth * hpPercent), 12, 2);
+    }
+    this.hpText.setText(`${this.player.hp} / ${this.player.maxHp}`);
+
+    // Level & XP
+    this.levelText.setText(`LVL ${this.player.level}`);
+
+    const xpPercent = this.player.xp / this.player.xpToNextLevel;
+    this.xpBarFill.clear();
+    if (xpPercent > 0) {
+      this.xpBarFill.fillStyle(0x8844cc, 1);
+      this.xpBarFill.fillRoundedRect(10, 74, Math.max(2, barWidth * xpPercent), 8, 2);
     }
 
-    const lines = [
-      floorText,
-      `HP: ${this.player.hp}/${this.player.maxHp}`,
-      `Level: ${this.player.level}`,
-      `XP: ${this.player.xp}/${this.player.xpToNextLevel}`,
-      `ATK: ${this.player.attack} | DEF: ${this.player.defense}`,
-      `Enemies: ${enemyCount} | Items: ${itemCount}`,
-    ];
+    // Stats
+    this.statsText.setText(`ATK ${this.player.attack}  ·  DEF ${this.player.defense}`);
 
+    // Enemies
+    this.enemyText.setText(`Enemies: ${enemyCount}`);
+
+    // Stat points
     if (this.player.statPoints > 0) {
-      lines.push(`[L] ${this.player.statPoints} stat points!`);
+      this.statPointsText.setText(`▶ ${this.player.statPoints} stat points [L]`);
+      this.statPointsText.setVisible(true);
+    } else {
+      this.statPointsText.setVisible(false);
     }
 
-    this.hudText.setText(lines.join('\n'));
-
-    // Update gold display
-    this.goldText.setText(`💰 ${this.player.gold}`);
+    // Gold
+    this.goldText.setText(`${this.player.gold}`);
   }
 
   private updateWeaponHUD(): void {
     const weapon = this.player.getWeapon();
-    const rarityColors = [0xffffff, 0x00ff00, 0x0088ff, 0xaa00ff, 0xffaa00];
+    const rarityColors = [0xcccccc, 0x22cc22, 0x2288ff, 0xaa44ff, 0xffaa00];
 
     this.weaponIcon.setTexture(weapon.stats.texture);
     this.weaponIcon.setTint(rarityColors[weapon.rarity]);
