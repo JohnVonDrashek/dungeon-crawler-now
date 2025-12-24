@@ -208,6 +208,175 @@ export class BootScene extends Phaser.Scene {
     bossEnemyGraphics.generateTexture('enemy_boss', TILE_SIZE, TILE_SIZE);
     bossEnemyGraphics.destroy();
 
+    // === SEVEN CAPITAL SINS ENEMIES ===
+
+    // Pride enemy (tall golden figure with crown)
+    const prideEnemyGraphics = this.make.graphics({ x: 0, y: 0 });
+    // Tall body
+    prideEnemyGraphics.fillStyle(0xffd700);
+    prideEnemyGraphics.fillRect(5, 4, 6, 12);
+    // Head held high
+    prideEnemyGraphics.fillStyle(0xfbbf24);
+    prideEnemyGraphics.fillCircle(8, 3, 3);
+    // Crown
+    prideEnemyGraphics.fillStyle(0xffd700);
+    prideEnemyGraphics.fillRect(4, 0, 8, 2);
+    prideEnemyGraphics.fillTriangle(5, 0, 6, -2, 7, 0);
+    prideEnemyGraphics.fillTriangle(9, 0, 10, -2, 11, 0);
+    // Stern eyes looking down
+    prideEnemyGraphics.fillStyle(0x000000);
+    prideEnemyGraphics.fillRect(6, 3, 1, 1);
+    prideEnemyGraphics.fillRect(9, 3, 1, 1);
+    // Cape/robe
+    prideEnemyGraphics.fillStyle(0xb8860b);
+    prideEnemyGraphics.fillTriangle(5, 6, 3, 15, 5, 15);
+    prideEnemyGraphics.fillTriangle(11, 6, 13, 15, 11, 15);
+    prideEnemyGraphics.generateTexture('enemy_pride', TILE_SIZE, TILE_SIZE);
+    prideEnemyGraphics.destroy();
+
+    // Greed enemy (hunched figure clutching coins)
+    const greedEnemyGraphics = this.make.graphics({ x: 0, y: 0 });
+    // Hunched body
+    greedEnemyGraphics.fillStyle(0x166534);
+    greedEnemyGraphics.fillRoundedRect(3, 6, 10, 10, 3);
+    // Head (bowed, looking at coins)
+    greedEnemyGraphics.fillStyle(0x15803d);
+    greedEnemyGraphics.fillCircle(7, 5, 3);
+    // Greedy eyes
+    greedEnemyGraphics.fillStyle(0xfbbf24);
+    greedEnemyGraphics.fillCircle(6, 4, 1);
+    greedEnemyGraphics.fillCircle(8, 5, 1);
+    // Clutching hands
+    greedEnemyGraphics.fillStyle(0x166534);
+    greedEnemyGraphics.fillCircle(4, 10, 2);
+    greedEnemyGraphics.fillCircle(12, 10, 2);
+    // Gold coins being held
+    greedEnemyGraphics.fillStyle(0xffd700);
+    greedEnemyGraphics.fillCircle(8, 11, 2);
+    greedEnemyGraphics.fillCircle(6, 13, 1);
+    greedEnemyGraphics.fillCircle(10, 13, 1);
+    greedEnemyGraphics.generateTexture('enemy_greed', TILE_SIZE, TILE_SIZE);
+    greedEnemyGraphics.destroy();
+
+    // Wrath enemy (horned demon with flames)
+    const wrathEnemyGraphics = this.make.graphics({ x: 0, y: 0 });
+    // Muscular body
+    wrathEnemyGraphics.fillStyle(0xdc2626);
+    wrathEnemyGraphics.fillRect(3, 5, 10, 11);
+    // Head
+    wrathEnemyGraphics.fillStyle(0xef4444);
+    wrathEnemyGraphics.fillCircle(8, 5, 4);
+    // Horns
+    wrathEnemyGraphics.fillStyle(0x1c1917);
+    wrathEnemyGraphics.fillTriangle(3, 4, 5, 0, 6, 5);
+    wrathEnemyGraphics.fillTriangle(13, 4, 11, 0, 10, 5);
+    // Angry eyes
+    wrathEnemyGraphics.fillStyle(0xfbbf24);
+    wrathEnemyGraphics.fillRect(5, 4, 2, 2);
+    wrathEnemyGraphics.fillRect(9, 4, 2, 2);
+    // Snarling mouth
+    wrathEnemyGraphics.fillStyle(0x000000);
+    wrathEnemyGraphics.fillRect(6, 7, 4, 1);
+    // Flame wisps
+    wrathEnemyGraphics.fillStyle(0xf97316);
+    wrathEnemyGraphics.fillTriangle(1, 8, 3, 5, 3, 10);
+    wrathEnemyGraphics.fillTriangle(15, 8, 13, 5, 13, 10);
+    wrathEnemyGraphics.generateTexture('enemy_wrath', TILE_SIZE, TILE_SIZE);
+    wrathEnemyGraphics.destroy();
+
+    // Sloth enemy (slouching blob creature)
+    const slothEnemyGraphics = this.make.graphics({ x: 0, y: 0 });
+    // Wide blob body
+    slothEnemyGraphics.fillStyle(0x6b7280);
+    slothEnemyGraphics.fillRoundedRect(1, 7, 14, 9, 5);
+    // Droopy head
+    slothEnemyGraphics.fillStyle(0x9ca3af);
+    slothEnemyGraphics.fillCircle(8, 7, 4);
+    // Half-closed sleepy eyes
+    slothEnemyGraphics.fillStyle(0x000000);
+    slothEnemyGraphics.fillRect(5, 6, 2, 1);
+    slothEnemyGraphics.fillRect(9, 6, 2, 1);
+    // Yawning mouth
+    slothEnemyGraphics.fillStyle(0x4b5563);
+    slothEnemyGraphics.fillCircle(8, 9, 2);
+    slothEnemyGraphics.fillStyle(0x374151);
+    slothEnemyGraphics.fillCircle(8, 9, 1);
+    // Zzz indication
+    slothEnemyGraphics.fillStyle(0x60a5fa);
+    slothEnemyGraphics.fillRect(12, 2, 2, 1);
+    slothEnemyGraphics.fillRect(13, 4, 2, 1);
+    slothEnemyGraphics.generateTexture('enemy_sloth', TILE_SIZE, TILE_SIZE);
+    slothEnemyGraphics.destroy();
+
+    // Envy enemy (shadowy mimic)
+    const envyEnemyGraphics = this.make.graphics({ x: 0, y: 0 });
+    // Shadowy body
+    envyEnemyGraphics.fillStyle(0x1f2937);
+    envyEnemyGraphics.fillRoundedRect(3, 4, 10, 12, 3);
+    // Shadowy head
+    envyEnemyGraphics.fillStyle(0x374151);
+    envyEnemyGraphics.fillCircle(8, 5, 4);
+    // Watching envious eyes (green)
+    envyEnemyGraphics.fillStyle(0x22c55e);
+    envyEnemyGraphics.fillCircle(6, 4, 2);
+    envyEnemyGraphics.fillCircle(10, 4, 2);
+    envyEnemyGraphics.fillStyle(0x000000);
+    envyEnemyGraphics.fillCircle(6, 4, 1);
+    envyEnemyGraphics.fillCircle(10, 4, 1);
+    // Reaching arms
+    envyEnemyGraphics.fillStyle(0x1f2937);
+    envyEnemyGraphics.fillRect(0, 8, 3, 2);
+    envyEnemyGraphics.fillRect(13, 8, 3, 2);
+    envyEnemyGraphics.generateTexture('enemy_envy', TILE_SIZE, TILE_SIZE);
+    envyEnemyGraphics.destroy();
+
+    // Gluttony enemy (large round creature with gaping mouth)
+    const gluttonyEnemyGraphics = this.make.graphics({ x: 0, y: 0 });
+    // Large round body
+    gluttonyEnemyGraphics.fillStyle(0xfbbf24);
+    gluttonyEnemyGraphics.fillCircle(8, 9, 7);
+    // Belly shade
+    gluttonyEnemyGraphics.fillStyle(0xf59e0b);
+    gluttonyEnemyGraphics.fillCircle(8, 11, 4);
+    // Small eyes
+    gluttonyEnemyGraphics.fillStyle(0x000000);
+    gluttonyEnemyGraphics.fillCircle(5, 6, 1);
+    gluttonyEnemyGraphics.fillCircle(11, 6, 1);
+    // Gaping mouth
+    gluttonyEnemyGraphics.fillStyle(0x7f1d1d);
+    gluttonyEnemyGraphics.fillCircle(8, 10, 3);
+    // Drool
+    gluttonyEnemyGraphics.fillStyle(0x60a5fa);
+    gluttonyEnemyGraphics.fillRect(9, 12, 1, 3);
+    gluttonyEnemyGraphics.generateTexture('enemy_gluttony', TILE_SIZE, TILE_SIZE);
+    gluttonyEnemyGraphics.destroy();
+
+    // Lust enemy (alluring glowing figure)
+    const lustEnemyGraphics = this.make.graphics({ x: 0, y: 0 });
+    // Glowing aura
+    lustEnemyGraphics.fillStyle(0xfce7f3);
+    lustEnemyGraphics.fillCircle(8, 8, 7);
+    // Curved body
+    lustEnemyGraphics.fillStyle(0xec4899);
+    lustEnemyGraphics.fillRoundedRect(4, 4, 8, 11, 4);
+    // Head
+    lustEnemyGraphics.fillStyle(0xf472b6);
+    lustEnemyGraphics.fillCircle(8, 4, 3);
+    // Alluring eyes
+    lustEnemyGraphics.fillStyle(0xffffff);
+    lustEnemyGraphics.fillCircle(6, 3, 1);
+    lustEnemyGraphics.fillCircle(10, 3, 1);
+    lustEnemyGraphics.fillStyle(0x000000);
+    lustEnemyGraphics.fillRect(6, 3, 1, 1);
+    lustEnemyGraphics.fillRect(10, 3, 1, 1);
+    // Heart symbol
+    lustEnemyGraphics.fillStyle(0xbe185d);
+    lustEnemyGraphics.fillCircle(7, 8, 2);
+    lustEnemyGraphics.fillCircle(9, 8, 2);
+    lustEnemyGraphics.fillTriangle(5, 9, 11, 9, 8, 13);
+    lustEnemyGraphics.generateTexture('enemy_lust', TILE_SIZE, TILE_SIZE);
+    lustEnemyGraphics.destroy();
+
     // Enemy projectile (red circle)
     const enemyProjGraphics = this.make.graphics({ x: 0, y: 0 });
     enemyProjGraphics.fillStyle(0xff4444);
@@ -651,6 +820,67 @@ export class BootScene extends Phaser.Scene {
     skullMarkerGraphics.fillRect(9, 11, 1, 2);
     skullMarkerGraphics.generateTexture('skull_marker', TILE_SIZE, TILE_SIZE);
     skullMarkerGraphics.destroy();
+
+    // === LORE OBJECTS ===
+
+    // Stone Tablet (carved stone slab with runes)
+    const tabletGraphics = this.make.graphics({ x: 0, y: 0 });
+    // Stone base
+    tabletGraphics.fillStyle(0x6b7280);
+    tabletGraphics.fillRect(3, 2, 10, 12);
+    // Darker edges
+    tabletGraphics.fillStyle(0x4b5563);
+    tabletGraphics.fillRect(3, 2, 1, 12);
+    tabletGraphics.fillRect(12, 2, 1, 12);
+    tabletGraphics.fillRect(3, 13, 10, 1);
+    // Top rounded corner effect
+    tabletGraphics.fillStyle(0x6b7280);
+    tabletGraphics.fillRect(4, 1, 8, 1);
+    // Carved rune lines (cyan glow)
+    tabletGraphics.fillStyle(0x22d3ee);
+    tabletGraphics.fillRect(5, 4, 6, 1);
+    tabletGraphics.fillRect(5, 6, 4, 1);
+    tabletGraphics.fillRect(5, 8, 5, 1);
+    tabletGraphics.fillRect(5, 10, 3, 1);
+    tabletGraphics.generateTexture('lore_tablet', TILE_SIZE, TILE_SIZE);
+    tabletGraphics.destroy();
+
+    // Wall Scratch (faint marks scratched into surface)
+    const scratchGraphics = this.make.graphics({ x: 0, y: 0 });
+    // Faint scratch marks
+    scratchGraphics.fillStyle(0x9ca3af, 0.6);
+    // Horizontal scratches
+    scratchGraphics.fillRect(2, 3, 8, 1);
+    scratchGraphics.fillRect(3, 5, 6, 1);
+    scratchGraphics.fillRect(1, 7, 9, 1);
+    scratchGraphics.fillRect(4, 9, 5, 1);
+    // Some diagonal marks
+    scratchGraphics.fillRect(10, 2, 1, 1);
+    scratchGraphics.fillRect(11, 3, 1, 1);
+    scratchGraphics.fillRect(10, 6, 1, 1);
+    scratchGraphics.fillRect(11, 7, 1, 1);
+    scratchGraphics.generateTexture('lore_scratch', TILE_SIZE, TILE_SIZE);
+    scratchGraphics.destroy();
+
+    // Ghostly Whisper (translucent spirit face)
+    const whisperGraphics = this.make.graphics({ x: 0, y: 0 });
+    // Ethereal glow (outer)
+    whisperGraphics.fillStyle(0xffffff, 0.2);
+    whisperGraphics.fillCircle(8, 8, 7);
+    // Spirit face (inner)
+    whisperGraphics.fillStyle(0xffffff, 0.4);
+    whisperGraphics.fillCircle(8, 7, 5);
+    // Flowing lower part
+    whisperGraphics.fillStyle(0xffffff, 0.3);
+    whisperGraphics.fillTriangle(4, 10, 12, 10, 8, 15);
+    // Eyes (hollow)
+    whisperGraphics.fillStyle(0x1f2937, 0.8);
+    whisperGraphics.fillCircle(6, 6, 1.5);
+    whisperGraphics.fillCircle(10, 6, 1.5);
+    // Mouth (open, wailing)
+    whisperGraphics.fillCircle(8, 9, 1.5);
+    whisperGraphics.generateTexture('lore_whisper', TILE_SIZE, TILE_SIZE);
+    whisperGraphics.destroy();
 
     // === GOLD COIN ===
     const goldCoinGraphics = this.make.graphics({ x: 0, y: 0 });

@@ -234,3 +234,322 @@ export class BossEnemy extends Enemy {
     });
   }
 }
+
+// ==================== SEVEN CAPITAL SINS ====================
+
+// Sloth - Very slow, high HP, creates slowing aura around it
+export class SlothEnemy extends Enemy {
+  private slowingAura: Phaser.GameObjects.Graphics | null = null;
+  private readonly SLOW_RADIUS = TILE_SIZE * 3;
+
+  constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
+    super(scene, x, y, 'enemy_sloth', {
+      hp: 80 + floor * 15,
+      attack: 4 + floor,
+      defense: 4 + floor,
+      speed: 25 + floor * 2,
+      xpValue: 40 + floor * 8,
+    });
+    this.setScale(1.2);
+    this.createSlowingAura();
+  }
+
+  private createSlowingAura(): void {
+    this.slowingAura = this.scene.add.graphics();
+    this.slowingAura.setDepth(1);
+  }
+
+  update(time: number, delta: number): void {
+    super.update(time, delta);
+
+    if (!this.active) return;
+
+    // Update aura position and visual
+    if (this.slowingAura) {
+      this.slowingAura.clear();
+      this.slowingAura.fillStyle(0x6b7280, 0.15);
+      this.slowingAura.fillCircle(this.x, this.y, this.SLOW_RADIUS);
+      this.slowingAura.lineStyle(1, 0x9ca3af, 0.3);
+      this.slowingAura.strokeCircle(this.x, this.y, this.SLOW_RADIUS);
+    }
+
+    // Apply slowing effect to player if in range
+    if (this.target) {
+      const dist = Phaser.Math.Distance.Between(this.x, this.y, this.target.x, this.target.y);
+      if (dist < this.SLOW_RADIUS) {
+        // Apply 50% slow (handled via event)
+        this.scene.events.emit('playerSlowed', 0.5);
+      }
+    }
+  }
+
+  destroy(fromScene?: boolean): void {
+    if (this.slowingAura) {
+      this.slowingAura.destroy();
+    }
+    super.destroy(fromScene);
+  }
+}
+
+// Gluttony - Large, slow, heals when it successfully hits the player
+export class GluttonyEnemy extends Enemy {
+  constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
+    super(scene, x, y, 'enemy_gluttony', {
+      hp: 70 + floor * 12,
+      attack: 8 + floor * 2,
+      defense: 2 + floor,
+      speed: 35 + floor * 2,
+      xpValue: 45 + floor * 10,
+    });
+    this.setScale(1.4);
+  }
+
+  // Override to add heal on attack
+  onSuccessfulAttack(damageDealt: number): void {
+    // Heal 20% of damage dealt
+    const healAmount = Math.floor(damageDealt * 0.2);
+    this.hp = Math.min(this.maxHp, this.hp + healAmount);
+
+    // Visual feedback - green flash
+    this.setTint(0x22c55e);
+    this.scene.time.delayedCall(200, () => {
+      if (this.active) {
+        this.clearTint();
+      }
+    });
+  }
+}
+
+// Greed - Fast, steals gold on hit, flees when player has no gold
+export class GreedEnemy extends Enemy {
+  constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
+    super(scene, x, y, 'enemy_greed', {
+      hp: 25 + floor * 5,
+      attack: 3 + floor,
+      defense: 0,
+      speed: 100 + floor * 8,
+      xpValue: 35 + floor * 6,
+    });
+  }
+
+  update(time: number, delta: number): void {
+    super.update(time, delta);
+
+    if (!this.active || !this.target) return;
+
+    // If player has no gold, flee instead of chase
+    const player = this.target as Player;
+    if (player.gold <= 0 && this.state === 'chase') {
+      // Override chase to flee
+      const angle = Phaser.Math.Angle.Between(player.x, player.y, this.x, this.y);
+      this.setVelocity(Math.cos(angle) * this.speed * 0.8, Math.sin(angle) * this.speed * 0.8);
+    }
+  }
+
+  // Called when this enemy hits the player
+  onSuccessfulAttack(_damageDealt: number): void {
+    if (!this.target) return;
+    const player = this.target as Player;
+
+    // Steal 5-10 gold
+    const stealAmount = Math.min(player.gold, 5 + Math.floor(Math.random() * 6));
+    if (stealAmount > 0) {
+      player.spendGold(stealAmount);
+      this.scene.events.emit('goldStolen', stealAmount);
+
+      // Visual feedback - gold flash
+      this.setTint(0xffd700);
+      this.scene.time.delayedCall(300, () => {
+        if (this.active) {
+          this.clearTint();
+        }
+      });
+    }
+  }
+}
+
+// Envy - Copies the player's attack stat, shadowy appearance
+export class EnvyEnemy extends Enemy {
+  private hasCopied: boolean = false;
+
+  constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
+    super(scene, x, y, 'enemy_envy', {
+      hp: 35 + floor * 6,
+      attack: 5 + floor, // Base attack, will be overwritten
+      defense: 1 + floor,
+      speed: 70 + floor * 4,
+      xpValue: 40 + floor * 8,
+    });
+  }
+
+  update(time: number, delta: number): void {
+    super.update(time, delta);
+
+    if (!this.active || !this.target || this.hasCopied) return;
+
+    // Copy player's attack when first seeing them
+    const dist = Phaser.Math.Distance.Between(this.x, this.y, this.target.x, this.target.y);
+    if (dist < TILE_SIZE * 8) {
+      const player = this.target as Player;
+      this.attack = player.attack;
+      this.hasCopied = true;
+
+      // Visual feedback - green flash when copying
+      this.setTint(0x22c55e);
+      this.scene.time.delayedCall(500, () => {
+        if (this.active) {
+          this.setTint(0x16a34a); // Stay slightly green
+        }
+      });
+    }
+  }
+}
+
+// Wrath - Gets stronger when damaged, aggressive
+export class WrathEnemy extends Enemy {
+  private isEnraged: boolean = false;
+  private baseAttack: number;
+
+  constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
+    super(scene, x, y, 'enemy_wrath', {
+      hp: 45 + floor * 8,
+      attack: 10 + floor * 2,
+      defense: 2 + floor,
+      speed: 80 + floor * 4,
+      xpValue: 50 + floor * 10,
+    });
+    this.baseAttack = this.attack;
+  }
+
+  update(time: number, delta: number): void {
+    super.update(time, delta);
+
+    if (!this.active) return;
+
+    // Check for enrage at 50% HP
+    if (!this.isEnraged && this.hp <= this.maxHp * 0.5) {
+      this.isEnraged = true;
+      this.attack = Math.floor(this.baseAttack * 1.5);
+      this.speed *= 1.2;
+
+      // Visual feedback - brighter red, pulsing
+      this.setTint(0xff4444);
+      this.scene.tweens.add({
+        targets: this,
+        scaleX: 1.15,
+        scaleY: 1.15,
+        duration: 200,
+        yoyo: true,
+        repeat: 2,
+      });
+    }
+  }
+
+  takeDamage(amount: number): void {
+    super.takeDamage(amount);
+
+    // Flash orange when taking damage (wrath building)
+    if (this.active && !this.isEnraged) {
+      this.setTint(0xf97316);
+      this.scene.time.delayedCall(100, () => {
+        if (this.active && !this.isEnraged) {
+          this.clearTint();
+        }
+      });
+    }
+  }
+}
+
+// Lust - Pulls the player toward it with magnetic effect
+export class LustEnemy extends Enemy {
+  private readonly PULL_RADIUS = TILE_SIZE * 5;
+  private readonly PULL_STRENGTH = 30;
+  private glowEffect: Phaser.GameObjects.Graphics | null = null;
+
+  constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
+    super(scene, x, y, 'enemy_lust', {
+      hp: 25 + floor * 4,
+      attack: 4 + floor,
+      defense: 0,
+      speed: 60 + floor * 3,
+      xpValue: 35 + floor * 6,
+    });
+    this.createGlow();
+  }
+
+  private createGlow(): void {
+    this.glowEffect = this.scene.add.graphics();
+    this.glowEffect.setDepth(1);
+  }
+
+  update(time: number, delta: number): void {
+    super.update(time, delta);
+
+    if (!this.active) return;
+
+    // Update glow position
+    if (this.glowEffect) {
+      this.glowEffect.clear();
+      this.glowEffect.fillStyle(0xec4899, 0.1);
+      this.glowEffect.fillCircle(this.x, this.y, this.PULL_RADIUS);
+      // Pulsing inner glow
+      const pulseSize = TILE_SIZE + Math.sin(time / 200) * 5;
+      this.glowEffect.fillStyle(0xfce7f3, 0.2);
+      this.glowEffect.fillCircle(this.x, this.y, pulseSize);
+    }
+
+    // Pull player toward this enemy
+    if (this.target) {
+      const dist = Phaser.Math.Distance.Between(this.x, this.y, this.target.x, this.target.y);
+      if (dist < this.PULL_RADIUS && dist > TILE_SIZE) {
+        const angle = Phaser.Math.Angle.Between(this.target.x, this.target.y, this.x, this.y);
+        const pullForce = (1 - dist / this.PULL_RADIUS) * this.PULL_STRENGTH;
+        this.scene.events.emit('playerPulled', {
+          x: Math.cos(angle) * pullForce,
+          y: Math.sin(angle) * pullForce,
+        });
+      }
+    }
+  }
+
+  destroy(fromScene?: boolean): void {
+    if (this.glowEffect) {
+      this.glowEffect.destroy();
+    }
+    super.destroy(fromScene);
+  }
+}
+
+// Pride - High defense, reflects damage back to attacker
+export class PrideEnemy extends Enemy {
+  private readonly REFLECT_PERCENT = 0.25;
+
+  constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
+    super(scene, x, y, 'enemy_pride', {
+      hp: 60 + floor * 10,
+      attack: 8 + floor * 2,
+      defense: 5 + floor * 2,
+      speed: 50 + floor * 3,
+      xpValue: 60 + floor * 12,
+    });
+    this.setScale(1.1);
+  }
+
+  takeDamage(amount: number): void {
+    // Reflect damage before taking it
+    const reflectDamage = Math.floor(amount * this.REFLECT_PERCENT);
+    if (reflectDamage > 0 && this.target) {
+      this.scene.events.emit('damageReflected', reflectDamage);
+
+      // Visual feedback - golden flash
+      this.setTint(0xffd700);
+      this.scene.time.delayedCall(150, () => {
+        if (this.active) {
+          this.clearTint();
+        }
+      });
+    }
+
+    super.takeDamage(amount);
+  }
+}

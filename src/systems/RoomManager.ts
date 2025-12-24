@@ -270,7 +270,8 @@ export class RoomManager {
     this.darknessOverlay.setVisible(true);
     this.darknessOverlay.fillStyle(0x000000, 0.4);
 
-    // Darken only floor tiles outside the current room
+    // Darken only REVEALED floor tiles outside the current room
+    // (unrevealed tiles already have fog of war, don't double-darken)
     const tiles = this.dungeonData.tiles;
     for (let y = 0; y < tiles.length; y++) {
       for (let x = 0; x < tiles[y].length; x++) {
@@ -283,7 +284,11 @@ export class RoomManager {
           continue;
         }
 
-        // Darken this floor tile
+        // Skip unrevealed tiles (they already have fog of war)
+        const key = `${x},${y}`;
+        if (!this.revealedTiles.has(key)) continue;
+
+        // Darken this revealed floor tile
         this.darknessOverlay.fillRect(
           x * TILE_SIZE,
           y * TILE_SIZE,

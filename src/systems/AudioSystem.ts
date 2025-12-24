@@ -104,6 +104,23 @@ export class AudioSystem {
     this.createSound('sfx_potion', 0.3, (t) => {
       return Math.sin(500 * Math.PI * 2 * t + Math.sin(8 * Math.PI * 2 * t) * 50) * Math.exp(-t * 5) * 0.2;
     });
+
+    // Ghostly whisper sound (breathy, ethereal)
+    this.createSound('sfx_whisper', 0.6, (t) => {
+      // Layered noise with slow modulation for breathy effect
+      const noise = (Math.random() * 2 - 1) * 0.3;
+      const tone1 = Math.sin(180 * Math.PI * 2 * t) * 0.1;
+      const tone2 = Math.sin(220 * Math.PI * 2 * t) * 0.08;
+      const envelope = Math.sin(Math.PI * t / 0.6) * Math.exp(-t * 2);
+      return (noise + tone1 + tone2) * envelope * 0.15;
+    });
+
+    // Stone tablet reading sound (stone scrape)
+    this.createSound('sfx_tablet', 0.25, (t) => {
+      const noise = (Math.random() * 2 - 1);
+      const tone = Math.sin(120 * Math.PI * 2 * t);
+      return (noise * 0.3 + tone * 0.2) * Math.exp(-t * 8) * 0.2;
+    });
   }
 
   private createSound(key: string, duration: number, generator: (t: number) => number): void {

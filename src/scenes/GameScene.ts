@@ -1,7 +1,11 @@
 import Phaser from 'phaser';
 import { Player } from '../entities/Player';
 import { Enemy } from '../entities/Enemy';
-import { FastEnemy, TankEnemy, RangedEnemy, BossEnemy } from '../entities/enemies/EnemyTypes';
+import {
+  FastEnemy, TankEnemy, RangedEnemy, BossEnemy,
+  SlothEnemy, GluttonyEnemy, GreedEnemy, EnvyEnemy,
+  WrathEnemy, LustEnemy, PrideEnemy
+} from '../entities/enemies/EnemyTypes';
 import { TILE_SIZE, DUNGEON_WIDTH, DUNGEON_HEIGHT } from '../utils/constants';
 import { DungeonGenerator, DungeonData, Room, RoomType } from '../systems/DungeonGenerator';
 import { CombatSystem } from '../systems/CombatSystem';
@@ -15,6 +19,7 @@ import { LevelUpUI } from '../ui/LevelUpUI';
 import { RoomManager } from '../systems/RoomManager';
 import { HazardSystem } from '../systems/HazardSystem';
 import { Weapon, WeaponType } from '../systems/Weapon';
+import { LoreSystem, LoreEntry } from '../systems/LoreSystem';
 
 export class GameScene extends Phaser.Scene {
   private player!: Player;
@@ -37,6 +42,10 @@ export class GameScene extends Phaser.Scene {
   private levelUpUI!: LevelUpUI;
   private roomManager!: RoomManager;
   private hazardSystem!: HazardSystem;
+  private loreSystem!: LoreSystem;
+  private loreObjects!: Phaser.Physics.Arcade.Group;
+  private activeLoreModal: Phaser.GameObjects.Container | null = null;
+  private lorePrompt!: Phaser.GameObjects.Text;
   private floor: number = 1;
   private canExit: boolean = true;
   private isBossFloor: boolean = false;
@@ -98,8 +107,10 @@ export class GameScene extends Phaser.Scene {
     // Create special room object groups (must be before addRoomDecorations)
     this.chests = this.physics.add.group();
     this.shrines = this.physics.add.group();
+    this.loreSystem = new LoreSystem();
+    this.loreObjects = this.physics.add.group();
 
-    // Add room decorations (chests, shrines) after player exists for physics overlaps
+    // Add room decorations (chests, shrines, lore) after player exists for physics overlaps
     this.addRoomDecorations();
 
     // Setup special room collisions
@@ -147,6 +158,7 @@ export class GameScene extends Phaser.Scene {
     this.minimapUI = new MinimapUI(this, this.dungeon);
     this.levelUpUI = new LevelUpUI(this, this.player);
     this.createHUD();
+    this.createLorePrompt();
 
     // Boss floor announcement
     if (this.isBossFloor) {
@@ -156,6 +168,9 @@ export class GameScene extends Phaser.Scene {
 
   update(time: number, delta: number): void {
     if (this.inventoryUI.getIsVisible() || this.levelUpUI.getIsVisible()) return;
+
+    // Reset speed modifier each frame (will be reapplied by SlothEnemy if in range)
+    this.player.resetSpeedModifier();
 
     this.player.update(time, delta);
 
@@ -179,6 +194,7 @@ export class GameScene extends Phaser.Scene {
 
     this.minimapUI.update(this.player.x, this.player.y);
     this.updateHUD();
+    this.updateLorePrompt();
   }
 
   private createDungeonTiles(): void {
@@ -239,6 +255,9 @@ export class GameScene extends Phaser.Scene {
       // Add candles to all rooms for atmosphere
       this.addWallCandles(room);
 
+      // Add lore objects to some rooms
+      this.tryAddLoreObject(room);
+
       switch (room.type) {
         case RoomType.TREASURE:
           // Add chest in center
@@ -247,6 +266,8 @@ export class GameScene extends Phaser.Scene {
         case RoomType.SHRINE:
           // Add healing shrine
           this.addHealingShrine(room);
+          // Shrines always have a tablet nearby
+          this.addLoreObject(room, 'tablet');
           break;
         case RoomType.CHALLENGE:
           // Add skull markers in corners
@@ -469,34 +490,363 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  // === LORE SYSTEM ===
+
+  private tryAddLoreObject(room: Room): void {
+    // Skip spawn room, exit room, and rooms that already have special objects
+    if (room.type === RoomType.SPAWN || room.type === RoomType.EXIT) return;
+    if (room.type === RoomType.SHRINE) return; // Shrines get their own tablet
+
+    // 20% chance to add lore to normal rooms
+    if (Math.random() > 0.2) return;
+
+    const loreType = this.loreSystem.getRandomLoreType(this.floor);
+    this.addLoreObject(room, loreType);
+  }
+
+  private addLoreObject(room: Room, forcedType?: 'tablet' | 'scratch' | 'whisper'): void {
+    const loreType = forcedType || this.loreSystem.getRandomLoreType(this.floor);
+    const lore = this.loreSystem.getRandomLore(this.floor, loreType);
+
+    if (!lore) return; // No lore available for this floor/type
+
+    // Position: offset from center to avoid overlapping other objects
+    const offsetX = (Math.random() - 0.5) * (room.width - 4) * TILE_SIZE;
+    const offsetY = (Math.random() - 0.5) * (room.height - 4) * TILE_SIZE;
+    const loreX = room.centerX * TILE_SIZE + TILE_SIZE / 2 + offsetX;
+    const loreY = room.centerY * TILE_SIZE + TILE_SIZE / 2 + offsetY;
+
+    // Get texture based on type
+    let texture: string;
+    switch (lore.type) {
+      case 'tablet':
+        texture = 'lore_tablet';
+        break;
+      case 'scratch':
+        texture = 'lore_scratch';
+        break;
+      case 'whisper':
+        texture = 'lore_whisper';
+        break;
+    }
+
+    const loreSprite = this.loreObjects.create(loreX, loreY, texture) as Phaser.Physics.Arcade.Sprite;
+    loreSprite.setDepth(3);
+    loreSprite.setImmovable(true);
+    loreSprite.setData('loreEntry', lore);
+    loreSprite.setData('discovered', false);
+
+    // Visual effects based on type
+    if (lore.type === 'tablet') {
+      // Tablets have a subtle glow
+      const glow = this.add.sprite(loreX, loreY, 'lore_tablet');
+      glow.setDepth(2);
+      glow.setTint(0x22d3ee);
+      glow.setAlpha(0.3);
+      glow.setScale(1.3);
+      loreSprite.setData('glow', glow);
+
+      this.tweens.add({
+        targets: glow,
+        alpha: 0.5,
+        duration: 1500,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    } else if (lore.type === 'whisper') {
+      // Whispers float and fade
+      loreSprite.setAlpha(0.6);
+      this.tweens.add({
+        targets: loreSprite,
+        y: loreY - 5,
+        alpha: 0.8,
+        duration: 2000,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    } else if (lore.type === 'scratch') {
+      // Scratches are faint and static
+      loreSprite.setAlpha(0.4);
+    }
+  }
+
+  private tryInteractWithLore(): void {
+    const INTERACT_RANGE = TILE_SIZE * 2;
+    let closestLore: Phaser.Physics.Arcade.Sprite | null = null;
+    let closestDist = INTERACT_RANGE;
+
+    // Find closest lore object within range
+    this.loreObjects.getChildren().forEach((child) => {
+      const loreSprite = child as Phaser.Physics.Arcade.Sprite;
+      if (!loreSprite.active) return;
+
+      const dist = Phaser.Math.Distance.Between(
+        this.player.x, this.player.y,
+        loreSprite.x, loreSprite.y
+      );
+
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestLore = loreSprite;
+      }
+    });
+
+    if (closestLore) {
+      this.interactWithLore(closestLore);
+    }
+  }
+
+  private interactWithLore(loreSprite: Phaser.Physics.Arcade.Sprite): void {
+    const loreEntry = loreSprite.getData('loreEntry') as LoreEntry;
+    if (!loreEntry) return;
+
+    const wasDiscovered = loreSprite.getData('discovered') as boolean;
+
+    // Mark as discovered on first read
+    if (!wasDiscovered) {
+      loreSprite.setData('discovered', true);
+      this.loreSystem.markDiscovered(loreEntry.id);
+    }
+
+    // Handle based on type
+    switch (loreEntry.type) {
+      case 'tablet':
+        this.audioSystem.play('sfx_tablet', 0.4);
+        this.showLoreModal(loreEntry);
+        // Fade out glow on first discovery
+        if (!wasDiscovered) {
+          const glow = loreSprite.getData('glow') as Phaser.GameObjects.Sprite;
+          if (glow) {
+            this.tweens.add({
+              targets: glow,
+              alpha: 0,
+              duration: 500,
+              onComplete: () => glow.destroy(),
+            });
+          }
+        }
+        break;
+
+      case 'scratch':
+        this.showLoreFloatingText(loreSprite.x, loreSprite.y, loreEntry.text, '#9ca3af');
+        break;
+
+      case 'whisper':
+        this.audioSystem.play('sfx_whisper', 0.3);
+        this.showLoreFloatingText(loreSprite.x, loreSprite.y, loreEntry.text, '#e5e7eb', true);
+        break;
+    }
+  }
+
+  private showLoreModal(lore: LoreEntry): void {
+    // Close any existing modal
+    if (this.activeLoreModal) {
+      this.activeLoreModal.destroy();
+    }
+
+    const camera = this.cameras.main;
+    const container = this.add.container(
+      camera.scrollX + camera.width / 2,
+      camera.scrollY + camera.height / 2
+    );
+    container.setDepth(300);
+    this.activeLoreModal = container;
+
+    // Dark overlay
+    const overlay = this.add.rectangle(0, 0, camera.width * 2, camera.height * 2, 0x000000, 0.8);
+    overlay.setInteractive();
+    container.add(overlay);
+
+    // Parchment-style panel
+    const panelWidth = 380;
+    const panelHeight = 280;
+    const panel = this.add.rectangle(0, 0, panelWidth, panelHeight, 0x2a2420);
+    panel.setStrokeStyle(3, 0x8b5cf6);
+    container.add(panel);
+
+    // Inner border
+    const innerBorder = this.add.rectangle(0, 0, panelWidth - 10, panelHeight - 10);
+    innerBorder.setStrokeStyle(1, 0x4a4035);
+    innerBorder.setFillStyle();
+    container.add(innerBorder);
+
+    // Title
+    const title = this.add.text(0, -panelHeight / 2 + 30, lore.title || 'Ancient Writing', {
+      fontSize: '18px',
+      color: '#fbbf24',
+      fontStyle: 'bold',
+    });
+    title.setOrigin(0.5);
+    container.add(title);
+
+    // Decorative line under title
+    const line = this.add.rectangle(0, -panelHeight / 2 + 50, 200, 2, 0x8b5cf6);
+    container.add(line);
+
+    // Body text with word wrap
+    const bodyText = this.add.text(0, 0, lore.text, {
+      fontSize: '14px',
+      color: '#e5e7eb',
+      wordWrap: { width: panelWidth - 50 },
+      align: 'center',
+      lineSpacing: 6,
+    });
+    bodyText.setOrigin(0.5);
+    container.add(bodyText);
+
+    // Continue prompt
+    const continueText = this.add.text(0, panelHeight / 2 - 35, '[ Click to continue ]', {
+      fontSize: '12px',
+      color: '#9ca3af',
+      fontStyle: 'italic',
+    });
+    continueText.setOrigin(0.5);
+    container.add(continueText);
+
+    // Pulse the continue text
+    this.tweens.add({
+      targets: continueText,
+      alpha: 0.5,
+      duration: 800,
+      yoyo: true,
+      repeat: -1,
+    });
+
+    // Click to close
+    overlay.on('pointerdown', () => {
+      container.destroy();
+      this.activeLoreModal = null;
+    });
+  }
+
+  private showLoreFloatingText(x: number, y: number, text: string, color: string, italic: boolean = false): void {
+    const floatText = this.add.text(x, y - 20, text, {
+      fontSize: '12px',
+      color: color,
+      fontStyle: italic ? 'italic' : 'normal',
+      stroke: '#000000',
+      strokeThickness: 2,
+      wordWrap: { width: 150 },
+      align: 'center',
+    });
+    floatText.setOrigin(0.5);
+    floatText.setDepth(200);
+
+    this.tweens.add({
+      targets: floatText,
+      y: y - 60,
+      alpha: 0,
+      duration: 3000,
+      ease: 'Power2',
+      onComplete: () => floatText.destroy(),
+    });
+  }
+
+  private createLorePrompt(): void {
+    this.lorePrompt = this.add.text(
+      this.cameras.main.width / 2,
+      this.cameras.main.height - 40,
+      '[Q] Read',
+      {
+        fontSize: '14px',
+        color: '#ffffff',
+        backgroundColor: '#1f2937',
+        padding: { x: 12, y: 6 },
+      }
+    );
+    this.lorePrompt.setOrigin(0.5);
+    this.lorePrompt.setScrollFactor(0);
+    this.lorePrompt.setDepth(100);
+    this.lorePrompt.setVisible(false);
+  }
+
+  private updateLorePrompt(): void {
+    if (this.activeLoreModal) {
+      this.lorePrompt.setVisible(false);
+      return;
+    }
+
+    const INTERACT_RANGE = TILE_SIZE * 2;
+    let nearLore = false;
+    let loreType = '';
+
+    this.loreObjects.getChildren().forEach((child) => {
+      const loreSprite = child as Phaser.Physics.Arcade.Sprite;
+      if (!loreSprite.active) return;
+
+      const dist = Phaser.Math.Distance.Between(
+        this.player.x, this.player.y,
+        loreSprite.x, loreSprite.y
+      );
+
+      if (dist < INTERACT_RANGE) {
+        nearLore = true;
+        const entry = loreSprite.getData('loreEntry') as LoreEntry;
+        if (entry) {
+          loreType = entry.type;
+        }
+      }
+    });
+
+    if (nearLore) {
+      let label = 'Read';
+      if (loreType === 'tablet') label = 'Read Tablet';
+      else if (loreType === 'scratch') label = 'Read Scratch';
+      else if (loreType === 'whisper') label = 'Listen';
+
+      this.lorePrompt.setText(`[Q] ${label}`);
+      this.lorePrompt.setVisible(true);
+    } else {
+      this.lorePrompt.setVisible(false);
+    }
+  }
+
   private addWallCandles(room: Room): void {
     // Add candles along walls for atmosphere
     // Place candles at intervals along each wall, offset from corners
+    // Only place candles where there's actually a wall tile
 
+    const tiles = this.dungeon.tiles;
     const candlePositions: { x: number; y: number }[] = [];
 
-    // Top wall (inside room, on wall)
+    // Helper to check if a tile is a wall
+    const isWall = (x: number, y: number): boolean => {
+      if (y < 0 || y >= tiles.length || x < 0 || x >= tiles[0].length) return false;
+      return tiles[y][x] === 1;
+    };
+
+    // Top wall - only place if the tile above is a wall
     const topY = room.y;
     for (let x = room.x + 2; x < room.x + room.width - 2; x += 4) {
-      candlePositions.push({ x, y: topY });
+      if (isWall(x, topY - 1)) {
+        candlePositions.push({ x, y: topY });
+      }
     }
 
-    // Bottom wall
+    // Bottom wall - only place if the tile below is a wall
     const bottomY = room.y + room.height - 1;
     for (let x = room.x + 2; x < room.x + room.width - 2; x += 4) {
-      candlePositions.push({ x, y: bottomY });
+      if (isWall(x, bottomY + 1)) {
+        candlePositions.push({ x, y: bottomY });
+      }
     }
 
-    // Left wall
+    // Left wall - only place if the tile to the left is a wall
     const leftX = room.x;
     for (let y = room.y + 2; y < room.y + room.height - 2; y += 4) {
-      candlePositions.push({ x: leftX, y });
+      if (isWall(leftX - 1, y)) {
+        candlePositions.push({ x: leftX, y });
+      }
     }
 
-    // Right wall
+    // Right wall - only place if the tile to the right is a wall
     const rightX = room.x + room.width - 1;
     for (let y = room.y + 2; y < room.y + room.height - 2; y += 4) {
-      candlePositions.push({ x: rightX, y });
+      if (isWall(rightX + 1, y)) {
+        candlePositions.push({ x: rightX, y });
+      }
     }
 
     // Create candle sprites with flickering animation
@@ -642,6 +992,40 @@ export class GameScene extends Phaser.Scene {
 
   private createEnemy(x: number, y: number): Enemy {
     const roll = Math.random();
+    const sinRoll = Math.random();
+
+    // Sin enemies based on floor progression
+    // Each sin has its own probability window
+    // Pride: Floor 10+ (5% chance - rare and powerful)
+    if (this.floor >= 10 && sinRoll < 0.05) {
+      return new PrideEnemy(this, x, y, this.floor);
+    }
+    // Wrath: Floor 7+ (8% chance)
+    if (this.floor >= 7 && sinRoll >= 0.05 && sinRoll < 0.13) {
+      return new WrathEnemy(this, x, y, this.floor);
+    }
+    // Lust: Floor 7+ (8% chance)
+    if (this.floor >= 7 && sinRoll >= 0.13 && sinRoll < 0.21) {
+      return new LustEnemy(this, x, y, this.floor);
+    }
+    // Greed: Floor 4+ (8% chance)
+    if (this.floor >= 4 && sinRoll >= 0.21 && sinRoll < 0.29) {
+      return new GreedEnemy(this, x, y, this.floor);
+    }
+    // Envy: Floor 4+ (8% chance)
+    if (this.floor >= 4 && sinRoll >= 0.29 && sinRoll < 0.37) {
+      return new EnvyEnemy(this, x, y, this.floor);
+    }
+    // Sloth: Floor 1+ (8% chance - intro sin)
+    if (sinRoll >= 0.37 && sinRoll < 0.45) {
+      return new SlothEnemy(this, x, y, this.floor);
+    }
+    // Gluttony: Floor 1+ (8% chance - intro sin)
+    if (sinRoll >= 0.45 && sinRoll < 0.53) {
+      return new GluttonyEnemy(this, x, y, this.floor);
+    }
+
+    // Standard enemies
     const hasRanged = this.floor >= 2;
     const hasTank = this.floor >= 3;
 
@@ -787,6 +1171,8 @@ export class GameScene extends Phaser.Scene {
       this.handleExitCollision as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
       undefined, this
     );
+
+    // Lore objects - handled via Q key interaction, not automatic overlap
 
     this.physics.add.overlap(
       this.player, this.itemDrops,
@@ -1355,6 +1741,34 @@ export class GameScene extends Phaser.Scene {
       this.audioSystem.play('sfx_levelup', 0.5);
       this.showLevelUpNotification();
     });
+
+    // === SIN ENEMY EVENTS ===
+
+    // Sloth's slowing aura - temporarily reduce player speed
+    this.events.on('playerSlowed', (slowFactor: number) => {
+      this.player.setSpeedModifier(slowFactor);
+    });
+
+    // Lust's magnetic pull - apply velocity toward enemy
+    this.events.on('playerPulled', (pullVector: { x: number; y: number }) => {
+      const body = this.player.body as Phaser.Physics.Arcade.Body;
+      if (body) {
+        body.velocity.x += pullVector.x;
+        body.velocity.y += pullVector.y;
+      }
+    });
+
+    // Pride's damage reflection - damage player when attacking Pride
+    this.events.on('damageReflected', (damage: number) => {
+      this.player.takeDamage(damage);
+      this.showDamageNumber(this.player.x, this.player.y, damage, true);
+      this.showFloatingText(this.player.x, this.player.y - 30, 'REFLECTED!', '#ffd700');
+    });
+
+    // Greed's gold stealing - show notification
+    this.events.on('goldStolen', (amount: number) => {
+      this.showFloatingText(this.player.x, this.player.y - 30, `-${amount} gold!`, '#ffd700');
+    });
   }
 
   private setupPlayerAttack(): void {
@@ -1395,6 +1809,18 @@ export class GameScene extends Phaser.Scene {
         this.player.setVelocity(0, 0);
         this.levelUpUI.show();
       }
+    });
+
+    // Q: Interact with nearby lore objects
+    this.input.keyboard.on('keydown-Q', () => {
+      if (this.inventoryUI.getIsVisible() || this.levelUpUI.getIsVisible()) return;
+      if (this.activeLoreModal) {
+        // Close modal if open
+        this.activeLoreModal.destroy();
+        this.activeLoreModal = null;
+        return;
+      }
+      this.tryInteractWithLore();
     });
 
     // Dev/Debug controls
@@ -1511,6 +1937,27 @@ export class GameScene extends Phaser.Scene {
       y: y - 50,
       alpha: 0,
       duration: 800,
+      ease: 'Power2',
+      onComplete: () => text.destroy(),
+    });
+  }
+
+  private showFloatingText(x: number, y: number, message: string, color: string): void {
+    const text = this.add.text(x, y, message, {
+      fontSize: '14px',
+      fontStyle: 'bold',
+      color: color,
+      stroke: '#000000',
+      strokeThickness: 3,
+    });
+    text.setOrigin(0.5);
+    text.setDepth(150);
+
+    this.tweens.add({
+      targets: text,
+      y: y - 40,
+      alpha: 0,
+      duration: 1000,
       ease: 'Power2',
       onComplete: () => text.destroy(),
     });

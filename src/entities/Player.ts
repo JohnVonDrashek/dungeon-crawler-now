@@ -49,6 +49,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private readonly DODGE_DURATION_MS = 200;
   private readonly DODGE_SPEED_MULTIPLIER = 3;
 
+  // Speed modifier for slowing effects (1.0 = normal)
+  private speedModifier: number = 1.0;
+
   constructor(scene: Phaser.Scene, x: number, y: number) {
     super(scene, x, y, 'player');
 
@@ -110,7 +113,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       velocityY *= normalizer;
     }
 
-    this.setVelocity(velocityX * this.speed, velocityY * this.speed);
+    const effectiveSpeed = this.speed * this.speedModifier;
+    this.setVelocity(velocityX * effectiveSpeed, velocityY * effectiveSpeed);
   }
 
   private updateCooldowns(delta: number): void {
@@ -279,6 +283,15 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (this.hp > this.maxHp) {
       this.hp = this.maxHp;
     }
+  }
+
+  // Speed modifier for sin enemy effects (e.g., Sloth's slowing aura)
+  setSpeedModifier(modifier: number): void {
+    this.speedModifier = Math.max(0.1, Math.min(1.0, modifier)); // Clamp between 10% and 100%
+  }
+
+  resetSpeedModifier(): void {
+    this.speedModifier = 1.0;
   }
 
   pickupItem(item: Item): boolean {
