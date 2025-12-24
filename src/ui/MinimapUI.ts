@@ -26,12 +26,20 @@ export class MinimapUI {
   private cameraWidth: number;
   private cameraHeight: number;
 
+  // Throttling: only redraw every N frames
+  private frameCounter: number = 0;
+  private readonly UPDATE_INTERVAL: number = 3; // Update every 3 frames
+
   // Track special object states
   private openedChests: Set<number> = new Set(); // Room IDs with opened chests
   private usedShrines: Set<number> = new Set(); // Room IDs with used shrines
 
+  // Cache tile-to-room mapping for fast lookups
+  private tileRoomCache: Map<string, Room | null> = new Map();
+
   constructor(scene: Phaser.Scene, dungeonData: DungeonData) {
     this.dungeonData = dungeonData;
+    this.buildTileRoomCache();
 
     // Store camera dimensions for calculating visible area
     this.cameraWidth = scene.cameras.main.width;
@@ -74,8 +82,12 @@ export class MinimapUI {
       this.visitedRooms.add(currentRoom.id);
     }
 
-    // Redraw the minimap
-    this.draw(tileX, tileY);
+    // Throttle minimap redraws for performance
+    this.frameCounter++;
+    if (this.frameCounter >= this.UPDATE_INTERVAL) {
+      this.frameCounter = 0;
+      this.draw(tileX, tileY);
+    }
   }
 
   // Reveal tiles that would be visible on the player's screen
@@ -94,14 +106,19 @@ export class MinimapUI {
     }
   }
 
-  private getRoomAtTile(tileX: number, tileY: number): Room | null {
+  private buildTileRoomCache(): void {
+    // Pre-compute which room each tile belongs to
     for (const room of this.dungeonData.rooms) {
-      if (tileX >= room.x && tileX < room.x + room.width &&
-          tileY >= room.y && tileY < room.y + room.height) {
-        return room;
+      for (let y = room.y; y < room.y + room.height; y++) {
+        for (let x = room.x; x < room.x + room.width; x++) {
+          this.tileRoomCache.set(`${x},${y}`, room);
+        }
       }
     }
-    return null;
+  }
+
+  private getRoomAtTile(tileX: number, tileY: number): Room | null {
+    return this.tileRoomCache.get(`${tileX},${tileY}`) || null;
   }
 
   private draw(playerTileX: number, playerTileY: number): void {
@@ -118,22 +135,25 @@ export class MinimapUI {
     const offsetX = this.x + centerOffset - playerTileX * this.scale;
     const offsetY = this.y + centerOffset - playerTileY * this.scale;
 
-    // Draw visited tiles with room-type colors
-    for (const key of this.visitedTiles) {
-      const [tx, ty] = key.split(',').map(Number);
+    // Only iterate through tiles visible in the minimap viewport (not all visited tiles)
+    const tilesInView = Math.ceil(this.viewportSize / this.scale) + 2;
+    const startTileX = playerTileX - Math.floor(tilesInView / 2);
+    const startTileY = playerTileY - Math.floor(tilesInView / 2);
 
-      // Check if this tile is a floor
-      if (this.dungeonData.tiles[ty] && this.dungeonData.tiles[ty][tx] === 0) {
-        const drawX = offsetX + tx * this.scale;
-        const drawY = offsetY + ty * this.scale;
+    for (let dy = 0; dy < tilesInView; dy++) {
+      for (let dx = 0; dx < tilesInView; dx++) {
+        const tx = startTileX + dx;
+        const ty = startTileY + dy;
+        const key = `${tx},${ty}`;
 
-        // Only draw if within viewport
-        if (
-          drawX >= this.x &&
-          drawX < this.x + this.viewportSize &&
-          drawY >= this.y &&
-          drawY < this.y + this.viewportSize
-        ) {
+        // Only draw if this tile has been visited
+        if (!this.visitedTiles.has(key)) continue;
+
+        // Check if this tile is a floor
+        if (this.dungeonData.tiles[ty] && this.dungeonData.tiles[ty][tx] === 0) {
+          const drawX = offsetX + tx * this.scale;
+          const drawY = offsetY + ty * this.scale;
+
           // Get room color based on room type
           const room = this.getRoomAtTile(tx, ty);
           const color = room ? ROOM_COLORS[room.type] : 0x374151;

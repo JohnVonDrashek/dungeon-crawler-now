@@ -257,6 +257,12 @@ export class SlothEnemy extends Enemy {
   private createSlowingAura(): void {
     this.slowingAura = this.scene.add.graphics();
     this.slowingAura.setDepth(1);
+    // Draw at origin - we'll move the graphics object with setPosition
+    this.slowingAura.fillStyle(0x6b7280, 0.15);
+    this.slowingAura.fillCircle(0, 0, this.SLOW_RADIUS);
+    this.slowingAura.lineStyle(1, 0x9ca3af, 0.3);
+    this.slowingAura.strokeCircle(0, 0, this.SLOW_RADIUS);
+    this.slowingAura.setPosition(this.x, this.y);
   }
 
   update(time: number, delta: number): void {
@@ -264,13 +270,9 @@ export class SlothEnemy extends Enemy {
 
     if (!this.active) return;
 
-    // Update aura position and visual
+    // Update aura position (just move it, don't redraw)
     if (this.slowingAura) {
-      this.slowingAura.clear();
-      this.slowingAura.fillStyle(0x6b7280, 0.15);
-      this.slowingAura.fillCircle(this.x, this.y, this.SLOW_RADIUS);
-      this.slowingAura.lineStyle(1, 0x9ca3af, 0.3);
-      this.slowingAura.strokeCircle(this.x, this.y, this.SLOW_RADIUS);
+      this.slowingAura.setPosition(this.x, this.y);
     }
 
     // Apply slowing effect to player if in range
@@ -480,6 +482,12 @@ export class LustEnemy extends Enemy {
   private createGlow(): void {
     this.glowEffect = this.scene.add.graphics();
     this.glowEffect.setDepth(1);
+    // Draw at origin - we'll move the graphics object with setPosition
+    this.glowEffect.fillStyle(0xec4899, 0.1);
+    this.glowEffect.fillCircle(0, 0, this.PULL_RADIUS);
+    this.glowEffect.fillStyle(0xfce7f3, 0.2);
+    this.glowEffect.fillCircle(0, 0, TILE_SIZE);
+    this.glowEffect.setPosition(this.x, this.y);
   }
 
   update(time: number, delta: number): void {
@@ -487,15 +495,9 @@ export class LustEnemy extends Enemy {
 
     if (!this.active) return;
 
-    // Update glow position
+    // Update glow position (just move it, don't redraw)
     if (this.glowEffect) {
-      this.glowEffect.clear();
-      this.glowEffect.fillStyle(0xec4899, 0.1);
-      this.glowEffect.fillCircle(this.x, this.y, this.PULL_RADIUS);
-      // Pulsing inner glow
-      const pulseSize = TILE_SIZE + Math.sin(time / 200) * 5;
-      this.glowEffect.fillStyle(0xfce7f3, 0.2);
-      this.glowEffect.fillCircle(this.x, this.y, pulseSize);
+      this.glowEffect.setPosition(this.x, this.y);
     }
 
     // Pull player toward this enemy
