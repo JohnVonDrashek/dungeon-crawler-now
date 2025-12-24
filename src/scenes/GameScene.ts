@@ -29,6 +29,10 @@ export class GameScene extends Phaser.Scene {
   private floor: number = 1;
   private canExit: boolean = true;
   private isBossFloor: boolean = false;
+  private isFinalBoss: boolean = false;
+  private enemiesKilled: number = 0;
+  private itemsCollected: number = 0;
+  private readonly FINAL_FLOOR = 20;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -38,7 +42,12 @@ export class GameScene extends Phaser.Scene {
     this.floor = this.registry.get('floor') || 1;
     this.canExit = true;
     this.isBossFloor = this.floor % 5 === 0;
+    this.isFinalBoss = this.floor === this.FINAL_FLOOR;
     this.healthBars = new Map();
+
+    // Persist stats across floor transitions
+    this.enemiesKilled = this.registry.get('enemiesKilled') || 0;
+    this.itemsCollected = this.registry.get('itemsCollected') || 0;
 
     this.combatSystem = new CombatSystem(this);
     this.lootSystem = new LootSystem(0.5);
@@ -299,7 +308,7 @@ export class GameScene extends Phaser.Scene {
     const player = playerObj as unknown as Player;
     const enemy = enemyObj as unknown as Enemy;
 
-    if (player.getIsInvulnerable()) return;
+    if (player.getIsInvulnerable() || this.devMode) return;
 
     const result = this.combatSystem.calculateDamage(enemy, player);
     this.combatSystem.applyDamage(player, result);
@@ -327,7 +336,7 @@ export class GameScene extends Phaser.Scene {
     const player = playerObj as unknown as Player;
     const projectile = projectileObj as Phaser.Physics.Arcade.Sprite;
 
-    if (player.getIsInvulnerable()) {
+    if (player.getIsInvulnerable() || this.devMode) {
       projectile.destroy();
       return;
     }
@@ -347,7 +356,20 @@ export class GameScene extends Phaser.Scene {
 
   private handleExitCollision(): void {
     if (!this.canExit) return;
+
+    // Block exit on final floor until boss is defeated
+    if (this.isFinalBoss && this.hasBossAlive()) {
+      this.showGameMessage('Defeat the boss first!');
+      return;
+    }
+
     this.canExit = false;
+
+    // If final boss is dead, trigger victory instead of next floor
+    if (this.isFinalBoss) {
+      this.handleVictory();
+      return;
+    }
 
     this.floor++;
     this.registry.set('floor', this.floor);
@@ -377,6 +399,8 @@ export class GameScene extends Phaser.Scene {
     if (item && this.player.pickupItem(item)) {
       this.showPickupText(itemSprite.x, itemSprite.y, item);
       this.audioSystem.play('sfx_pickup', 0.4);
+      this.itemsCollected++;
+      this.registry.set('itemsCollected', this.itemsCollected);
       itemSprite.destroy();
     }
   }
@@ -425,15 +449,21 @@ export class GameScene extends Phaser.Scene {
   }
 
   private showBossAnnouncement(): void {
+    const isFinal = this.floor === this.FINAL_FLOOR;
+    const message = isFinal ? 'FLOOR 20\nFINAL BOSS' : `FLOOR ${this.floor}\nBOSS BATTLE`;
+    const color = isFinal ? '#fbbf24' : '#ff4444';
+
     const text = this.add.text(
       this.cameras.main.width / 2,
       this.cameras.main.height / 2,
-      `FLOOR ${this.floor}\nBOSS BATTLE`,
+      message,
       {
-        fontSize: '32px',
-        color: '#ff4444',
+        fontSize: isFinal ? '40px' : '32px',
+        color: color,
         fontStyle: 'bold',
         align: 'center',
+        stroke: '#000000',
+        strokeThickness: isFinal ? 4 : 0,
       }
     );
     text.setOrigin(0.5);
@@ -458,11 +488,20 @@ export class GameScene extends Phaser.Scene {
       this.player.gainXP(enemy.xpValue);
       this.audioSystem.play('sfx_enemy_death', 0.4);
       this.removeHealthBar(enemy);
+      this.enemiesKilled++;
+      this.registry.set('enemiesKilled', this.enemiesKilled);
 
       // Boss drops guaranteed rare+ loot
       if (enemy instanceof BossEnemy) {
         const loot = this.lootSystem.generateGuaranteedLoot(ItemRarity.RARE);
         this.spawnItemDrop(enemy.x, enemy.y, loot);
+
+        // Check for victory on final boss
+        if (this.isFinalBoss) {
+          this.time.delayedCall(1500, () => {
+            this.handleVictory();
+          });
+        }
       } else {
         const loot = this.lootSystem.generateLoot(this.floor);
         if (loot) {
@@ -472,7 +511,7 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.events.on('enemyAttack', (enemy: Enemy, target: Player) => {
-      if (!target.getIsInvulnerable()) {
+      if (!target.getIsInvulnerable() && !this.devMode) {
         const result = this.combatSystem.calculateDamage(enemy, target);
         this.combatSystem.applyDamage(target, result);
         this.audioSystem.play('sfx_hurt', 0.4);
@@ -513,6 +552,118 @@ export class GameScene extends Phaser.Scene {
       if (this.inventoryUI.getIsVisible()) {
         this.inventoryUI.toggle();
       }
+    });
+
+    // Dev/Debug controls
+    this.setupDevControls();
+  }
+
+  private devMode: boolean = false;
+
+  private setupDevControls(): void {
+    if (!this.input.keyboard) return;
+
+    // F1: Toggle god mode (invincibility)
+    this.input.keyboard.on('keydown-F1', () => {
+      this.devMode = !this.devMode;
+      this.showDevMessage(`God Mode: ${this.devMode ? 'ON' : 'OFF'}`);
+      if (this.devMode) {
+        this.player.hp = this.player.maxHp;
+      }
+    });
+
+    // F2: Skip to next floor
+    this.input.keyboard.on('keydown-F2', () => {
+      this.showDevMessage(`Skipping to floor ${this.floor + 1}`);
+      this.handleExitCollision();
+    });
+
+    // F3: Jump to final boss (floor 20)
+    this.input.keyboard.on('keydown-F3', () => {
+      this.floor = this.FINAL_FLOOR - 1;
+      this.registry.set('floor', this.floor);
+      this.showDevMessage('Jumping to FINAL BOSS');
+      this.handleExitCollision();
+    });
+
+    // F4: Level up
+    this.input.keyboard.on('keydown-F4', () => {
+      this.player.gainXP(this.player.xpToNextLevel);
+      this.showDevMessage('Level Up!');
+    });
+
+    // F5: Spawn epic loot
+    this.input.keyboard.on('keydown-F5', () => {
+      const loot = this.lootSystem.generateGuaranteedLoot(ItemRarity.EPIC);
+      this.spawnItemDrop(this.player.x + 30, this.player.y, loot);
+      this.showDevMessage('Spawned Epic Loot');
+    });
+
+    // F6: Kill all enemies
+    this.input.keyboard.on('keydown-F6', () => {
+      let count = 0;
+      this.enemies.getChildren().forEach((child) => {
+        const enemy = child as unknown as Enemy;
+        if (enemy.active) {
+          enemy.takeDamage(9999);
+          count++;
+        }
+      });
+      this.showDevMessage(`Killed ${count} enemies`);
+    });
+  }
+
+  private hasBossAlive(): boolean {
+    return this.enemies.getChildren().some((child) => {
+      const enemy = child as unknown as Enemy;
+      return enemy.active && enemy instanceof BossEnemy;
+    });
+  }
+
+  private showGameMessage(msg: string): void {
+    const text = this.add.text(
+      this.cameras.main.width / 2,
+      this.cameras.main.height * 0.3,
+      msg,
+      {
+        fontSize: '24px',
+        color: '#ff4444',
+        fontStyle: 'bold',
+        stroke: '#000000',
+        strokeThickness: 3,
+      }
+    );
+    text.setOrigin(0.5);
+    text.setScrollFactor(0);
+    text.setDepth(200);
+
+    this.tweens.add({
+      targets: text,
+      alpha: 0,
+      y: text.y - 30,
+      duration: 1500,
+      delay: 500,
+      onComplete: () => text.destroy(),
+    });
+  }
+
+  private showDevMessage(msg: string): void {
+    const text = this.add.text(10, 10, `[DEV] ${msg}`, {
+      fontSize: '14px',
+      color: '#fbbf24',
+      backgroundColor: '#000000',
+      padding: { x: 5, y: 3 },
+    });
+    text.setScrollFactor(0);
+    text.setDepth(300);
+
+    this.tweens.add({
+      targets: text,
+      alpha: 0,
+      y: -20,
+      duration: 1500,
+      delay: 500,
+      onComplete: () => text.destroy(),
     });
   }
 
@@ -583,10 +734,41 @@ export class GameScene extends Phaser.Scene {
   private handlePlayerDeath(): void {
     // Delete save on death (roguelike mechanic)
     SaveSystem.deleteSave();
+
+    const stats = {
+      floor: this.floor,
+      level: this.player.level,
+      enemiesKilled: this.enemiesKilled,
+      itemsCollected: this.itemsCollected,
+    };
+
+    // Clear stats from registry
     this.registry.set('floor', 1);
+    this.registry.set('enemiesKilled', 0);
+    this.registry.set('itemsCollected', 0);
+
     this.cameras.main.fade(1000, 0, 0, 0);
     this.time.delayedCall(1000, () => {
-      this.scene.restart();
+      this.scene.start('GameOverScene', stats);
+    });
+  }
+
+  private handleVictory(): void {
+    const stats = {
+      floor: this.floor,
+      level: this.player.level,
+      enemiesKilled: this.enemiesKilled,
+      itemsCollected: this.itemsCollected,
+    };
+
+    // Clear stats from registry
+    this.registry.set('floor', 1);
+    this.registry.set('enemiesKilled', 0);
+    this.registry.set('itemsCollected', 0);
+
+    this.cameras.main.flash(2000, 255, 215, 0);
+    this.time.delayedCall(2000, () => {
+      this.scene.start('VictoryScene', stats);
     });
   }
 

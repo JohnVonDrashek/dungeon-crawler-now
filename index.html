@@ -10,13 +10,18 @@
         padding: 0;
         box-sizing: border-box;
       }
-      body {
+      html, body {
+        width: 100%;
+        height: 100%;
         background: #1a1a2e;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        min-height: 100vh;
         overflow: hidden;
+      }
+      #game-container {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
       }
       canvas {
         display: block;
@@ -24,6 +29,7 @@
     </style>
   </head>
   <body>
+    <div id="game-container"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
