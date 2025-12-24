@@ -12,6 +12,8 @@ import { progressionManager } from '../systems/ProgressionSystem';
 import { InventoryUI } from '../ui/InventoryUI';
 import { ShopUI } from '../ui/ShopUI';
 import { SettingsUI } from '../ui/SettingsUI';
+import { DialogueUI } from '../ui/DialogueUI';
+import { NPC, HUB_NPCS } from '../entities/NPC';
 
 interface PortalData {
   world: SinWorld;
@@ -31,8 +33,10 @@ export class HubScene extends Phaser.Scene {
   private fountain!: Phaser.GameObjects.Sprite;
   private shopNPC!: Phaser.GameObjects.Sprite;
   private interactPrompt!: Phaser.GameObjects.Container;
-  private nearbyInteractable: 'fountain' | 'shop' | 'victory' | SinWorld | null = null;
+  private nearbyInteractable: 'fountain' | 'shop' | 'victory' | 'chronicler' | 'mysterious' | SinWorld | null = null;
   private victoryPortal: { sprite: Phaser.GameObjects.Sprite; glow: Phaser.GameObjects.Arc } | null = null;
+  private dialogueUI!: DialogueUI;
+  private hubNPCs: NPC[] = [];
 
   // Hub dimensions (in tiles)
   private readonly HUB_WIDTH = 25;
@@ -91,6 +95,10 @@ export class HubScene extends Phaser.Scene {
     this.inventoryUI = new InventoryUI(this, this.player);
     this.shopUI = new ShopUI(this, this.player, 1);
     this.settingsUI = new SettingsUI(this);
+    this.dialogueUI = new DialogueUI(this);
+
+    // Create Hub NPCs
+    this.createHubNPCs();
 
     // Set up keyboard input
     this.setupKeyboardInput();
@@ -379,6 +387,44 @@ export class HubScene extends Phaser.Scene {
     });
     label.setOrigin(0.5);
     label.setDepth(3);
+  }
+
+  private createHubNPCs(): void {
+    // Chronicler - left side of hub
+    const chroniclerData = HUB_NPCS.find(n => n.name === 'The Chronicler')!;
+    const chroniclerX = 4 * TILE_SIZE;
+    const chroniclerY = (this.HUB_HEIGHT / 2) * TILE_SIZE;
+    const chronicler = new NPC(this, chroniclerX, chroniclerY, chroniclerData);
+    this.hubNPCs.push(chronicler);
+
+    // Add label
+    const chroniclerLabel = this.add.text(chroniclerX, chroniclerY + TILE_SIZE * 1.2, 'Chronicler', {
+      fontSize: '10px',
+      fontFamily: 'monospace',
+      color: '#8b5cf6',
+      stroke: '#000000',
+      strokeThickness: 2,
+    });
+    chroniclerLabel.setOrigin(0.5);
+    chroniclerLabel.setDepth(3);
+
+    // Mysterious Figure - right side of hub, slightly hidden
+    const mysteriousData = HUB_NPCS.find(n => n.name === 'Mysterious Figure')!;
+    const mysteriousX = (this.HUB_WIDTH - 4) * TILE_SIZE;
+    const mysteriousY = (this.HUB_HEIGHT / 2) * TILE_SIZE;
+    const mysterious = new NPC(this, mysteriousX, mysteriousY, mysteriousData);
+    this.hubNPCs.push(mysterious);
+
+    // Add label
+    const mysteriousLabel = this.add.text(mysteriousX, mysteriousY + TILE_SIZE * 1.2, '???', {
+      fontSize: '10px',
+      fontFamily: 'monospace',
+      color: '#4b5563',
+      stroke: '#000000',
+      strokeThickness: 2,
+    });
+    mysteriousLabel.setOrigin(0.5);
+    mysteriousLabel.setDepth(3);
   }
 
   private createUI(): void {
@@ -727,6 +773,22 @@ export class HubScene extends Phaser.Scene {
       }
     }
 
+    // Check Hub NPCs
+    for (const npc of this.hubNPCs) {
+      const dist = Phaser.Math.Distance.Between(playerX, playerY, npc.x, npc.y);
+      if (dist < interactDistance) {
+        const npcData = npc.getData();
+        if (npcData.name === 'The Chronicler') {
+          this.nearbyInteractable = 'chronicler';
+          this.showInteractPrompt('Talk to Chronicler');
+        } else {
+          this.nearbyInteractable = 'mysterious';
+          this.showInteractPrompt('Approach ???');
+        }
+        return;
+      }
+    }
+
     // Nothing nearby
     this.nearbyInteractable = null;
     this.hideInteractPrompt();
@@ -748,6 +810,7 @@ export class HubScene extends Phaser.Scene {
 
   private handleInteraction(): void {
     if (this.nearbyInteractable === null) return;
+    if (this.dialogueUI.getIsVisible()) return;
 
     if (this.nearbyInteractable === 'fountain') {
       this.healAtFountain();
@@ -755,9 +818,25 @@ export class HubScene extends Phaser.Scene {
       this.openShop();
     } else if (this.nearbyInteractable === 'victory') {
       this.enterVictory();
+    } else if (this.nearbyInteractable === 'chronicler' || this.nearbyInteractable === 'mysterious') {
+      this.talkToNPC(this.nearbyInteractable);
     } else {
       // It's a portal
       this.enterWorld(this.nearbyInteractable);
+    }
+  }
+
+  private talkToNPC(npcType: 'chronicler' | 'mysterious'): void {
+    const npc = this.hubNPCs.find(n => {
+      const data = n.getData();
+      return (npcType === 'chronicler' && data.name === 'The Chronicler') ||
+             (npcType === 'mysterious' && data.name === 'Mysterious Figure');
+    });
+
+    if (npc) {
+      this.dialogueUI.show({
+        lines: npc.getDialogue(),
+      });
     }
   }
 

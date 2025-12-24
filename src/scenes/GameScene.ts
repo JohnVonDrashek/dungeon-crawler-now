@@ -22,6 +22,8 @@ import { PlayerAttackManager } from '../systems/PlayerAttackManager';
 import { EnemySpawnManager } from '../systems/EnemySpawnManager';
 import { progressionManager } from '../systems/ProgressionSystem';
 import { SinWorld, getWorldConfig } from '../config/WorldConfig';
+import { DialogueUI } from '../ui/DialogueUI';
+import { NPC, createLostSoulData, createWarningSpirit } from '../entities/NPC';
 
 export class GameScene extends Phaser.Scene {
   private player!: Player;
@@ -51,6 +53,9 @@ export class GameScene extends Phaser.Scene {
   private loreObjects!: Phaser.Physics.Arcade.Group;
   private activeLoreModal: Phaser.GameObjects.Container | null = null;
   private lorePrompt!: Phaser.GameObjects.Text;
+  private dialogueUI!: DialogueUI;
+  private dungeonNPCs: NPC[] = [];
+  private nearbyNPC: NPC | null = null;
   private floor: number = 1;
   private currentWorld: SinWorld | null = null;
   private canExit: boolean = true;
@@ -176,8 +181,12 @@ export class GameScene extends Phaser.Scene {
     this.minimapUI = new MinimapUI(this, this.dungeon);
     this.levelUpUI = new LevelUpUI(this, this.player);
     this.settingsUI = new SettingsUI(this, this.audioSystem);
+    this.dialogueUI = new DialogueUI(this);
     this.createHUD();
     this.createLorePrompt();
+
+    // Add NPCs to dungeon
+    this.spawnDungeonNPCs();
 
     // Setup player attack after UI is created (needs UI visibility check)
     this.playerAttackManager.setupPlayerAttack(this.inventoryUI, this.levelUpUI);
@@ -190,6 +199,7 @@ export class GameScene extends Phaser.Scene {
 
   update(time: number, delta: number): void {
     if (this.inventoryUI.getIsVisible() || this.levelUpUI.getIsVisible() || this.settingsUI.getIsVisible()) return;
+    if (this.dialogueUI.getIsVisible() || this.debugMenuVisible) return;
 
     // Reset speed modifier each frame (will be reapplied by SlothEnemy if in range)
     this.player.resetSpeedModifier();
@@ -214,6 +224,12 @@ export class GameScene extends Phaser.Scene {
 
     // Update hazards
     this.hazardSystem.update(delta);
+
+    // Check NPC proximity
+    this.checkNPCProximity();
+    if (this.nearbyNPC) {
+      this.showNPCPrompt();
+    }
 
     this.minimapUI.update(this.player.x, this.player.y);
     this.updateHUD();
@@ -517,6 +533,84 @@ export class GameScene extends Phaser.Scene {
         ease: 'Sine.easeInOut',
       });
     }
+  }
+
+  // === NPC SYSTEM ===
+
+  private spawnDungeonNPCs(): void {
+    this.dungeonNPCs = [];
+
+    // Only spawn Lost Souls in world mode with world-specific lore
+    if (!this.currentWorld) return;
+
+    // Find shrine rooms to place Lost Souls
+    const shrineRooms = this.dungeon.rooms.filter(r => r.type === RoomType.SHRINE);
+
+    for (const room of shrineRooms) {
+      // Offset from center so NPC doesn't overlap shrine
+      const npcX = room.centerX * TILE_SIZE + TILE_SIZE * 2;
+      const npcY = room.centerY * TILE_SIZE + TILE_SIZE / 2;
+
+      const npcData = createLostSoulData(this.currentWorld);
+      const npc = new NPC(this, npcX, npcY, npcData);
+      this.dungeonNPCs.push(npc);
+    }
+
+    // On floor 2, add a warning spirit near the exit
+    if (this.floor === 2) {
+      const exitRoom = this.dungeon.rooms.find(r => r.type === RoomType.EXIT);
+      if (exitRoom) {
+        const warningX = exitRoom.centerX * TILE_SIZE - TILE_SIZE * 2;
+        const warningY = exitRoom.centerY * TILE_SIZE + TILE_SIZE / 2;
+
+        const warningData = createWarningSpirit(this.currentWorld);
+        const warningNPC = new NPC(this, warningX, warningY, warningData);
+        this.dungeonNPCs.push(warningNPC);
+      }
+    }
+  }
+
+  private checkNPCProximity(): void {
+    if (!this.player || this.dungeonNPCs.length === 0) {
+      this.nearbyNPC = null;
+      return;
+    }
+
+    const interactDistance = TILE_SIZE * 1.5;
+
+    for (const npc of this.dungeonNPCs) {
+      const dist = Phaser.Math.Distance.Between(
+        this.player.x, this.player.y,
+        npc.x, npc.y
+      );
+
+      if (dist < interactDistance) {
+        this.nearbyNPC = npc;
+        return;
+      }
+    }
+
+    this.nearbyNPC = null;
+  }
+
+  private showNPCPrompt(): void {
+    if (this.nearbyNPC && !this.dialogueUI.getIsVisible()) {
+      // Show interact hint near the NPC
+      const npcData = this.nearbyNPC.getData();
+      this.lorePrompt.setText(`[R] Talk to ${npcData.name}`);
+      this.lorePrompt.setPosition(this.nearbyNPC.x, this.nearbyNPC.y - TILE_SIZE);
+      this.lorePrompt.setOrigin(0.5);
+      this.lorePrompt.setVisible(true);
+    }
+  }
+
+  private talkToNPC(): void {
+    if (!this.nearbyNPC || this.dialogueUI.getIsVisible()) return;
+
+    this.lorePrompt.setVisible(false);
+    this.dialogueUI.show({
+      lines: this.nearbyNPC.getDialogue(),
+    });
   }
 
   // === LORE SYSTEM ===
@@ -1465,6 +1559,15 @@ export class GameScene extends Phaser.Scene {
         return;
       }
       this.tryInteractWithLore();
+    });
+
+    // R: Talk to nearby NPCs
+    this.input.keyboard.on('keydown-R', () => {
+      if (this.inventoryUI.getIsVisible() || this.levelUpUI.getIsVisible() || this.settingsUI.getIsVisible()) return;
+      if (this.dialogueUI.getIsVisible()) return;
+      if (this.nearbyNPC) {
+        this.talkToNPC();
+      }
     });
 
     // Dev/Debug controls
