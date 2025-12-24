@@ -590,7 +590,6 @@ export class MenuScene extends Phaser.Scene {
     });
 
     hitbox.on('pointerdown', () => {
-      this.cameras.main.flash(100, 255, 100, 50, false);
       callback();
     });
 

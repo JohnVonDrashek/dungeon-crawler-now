@@ -1,9 +1,4 @@
 import Phaser from 'phaser';
-import UIPlugin from 'phaser3-rex-plugins/templates/ui/ui-plugin.js';
-
-interface RexUIScene extends Phaser.Scene {
-  rexUI: UIPlugin;
-}
 
 export interface DialogueLine {
   speaker: string;
@@ -17,21 +12,22 @@ export interface DialogueData {
 }
 
 export class DialogueUI {
-  private scene: RexUIScene;
-  private panel: any | null = null;
+  private scene: Phaser.Scene;
+  private panel: Phaser.GameObjects.Container | null = null;
   private isVisible: boolean = false;
   private currentDialogue: DialogueData | null = null;
   private currentLineIndex: number = 0;
   private speakerText: Phaser.GameObjects.Text | null = null;
   private dialogueText: Phaser.GameObjects.Text | null = null;
   private continueHint: Phaser.GameObjects.Text | null = null;
+  private continueIcon: Phaser.GameObjects.Text | null = null;
   private keyListener: ((event: KeyboardEvent) => void) | null = null;
   private typewriterTimer: Phaser.Time.TimerEvent | null = null;
   private currentFullText: string = '';
   private isTyping: boolean = false;
 
   constructor(scene: Phaser.Scene) {
-    this.scene = scene as RexUIScene;
+    this.scene = scene;
   }
 
   show(dialogue: DialogueData): void {
@@ -50,67 +46,139 @@ export class DialogueUI {
 
   private createPanel(): void {
     const cam = this.scene.cameras.main;
-    const panelWidth = Math.min(500, cam.width - 40);
-    const panelHeight = 140;
+    const panelWidth = Math.min(520, cam.width - 40);
+    const panelHeight = 130;
     const panelX = cam.width / 2;
-    const panelY = cam.height - panelHeight / 2 - 20;
+    const panelY = cam.height - panelHeight / 2 - 25;
 
     // Create panel container
     this.panel = this.scene.add.container(panelX, panelY);
     this.panel.setScrollFactor(0);
     this.panel.setDepth(400);
 
-    // Background
-    const bg = this.scene.add.rectangle(0, 0, panelWidth, panelHeight, 0x1a1a2e, 0.95);
-    bg.setStrokeStyle(2, 0x8b5cf6);
+    // Main background
+    const bg = this.scene.add.graphics();
+    bg.fillStyle(0x0a0a0a, 0.92);
+    bg.fillRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 6);
+    bg.lineStyle(1, 0x444444, 0.7);
+    bg.strokeRoundedRect(-panelWidth / 2, -panelHeight / 2, panelWidth, panelHeight, 6);
     this.panel.add(bg);
+
+    // Corner accents
+    const corners = this.scene.add.graphics();
+    corners.lineStyle(2, 0xff6600, 0.8);
+    const cornerSize = 12;
+    const halfW = panelWidth / 2;
+    const halfH = panelHeight / 2;
+
+    // Top-left
+    corners.beginPath();
+    corners.moveTo(-halfW, -halfH + cornerSize);
+    corners.lineTo(-halfW, -halfH);
+    corners.lineTo(-halfW + cornerSize, -halfH);
+    corners.strokePath();
+
+    // Top-right
+    corners.beginPath();
+    corners.moveTo(halfW - cornerSize, -halfH);
+    corners.lineTo(halfW, -halfH);
+    corners.lineTo(halfW, -halfH + cornerSize);
+    corners.strokePath();
+
+    // Bottom-left
+    corners.beginPath();
+    corners.moveTo(-halfW, halfH - cornerSize);
+    corners.lineTo(-halfW, halfH);
+    corners.lineTo(-halfW + cornerSize, halfH);
+    corners.strokePath();
+
+    // Bottom-right
+    corners.beginPath();
+    corners.moveTo(halfW - cornerSize, halfH);
+    corners.lineTo(halfW, halfH);
+    corners.lineTo(halfW, halfH - cornerSize);
+    corners.strokePath();
+
+    this.panel.add(corners);
+
+    // Speaker name container with accent
+    const speakerBg = this.scene.add.graphics();
+    speakerBg.fillStyle(0x1a1a1a, 0.8);
+    speakerBg.fillRoundedRect(-halfW + 15, -halfH + 10, 160, 26, 3);
+    this.panel.add(speakerBg);
+
+    // Speaker diamond accent
+    const speakerAccent = this.scene.add.text(-halfW + 22, -halfH + 23, '◆', {
+      fontSize: '10px',
+      color: '#ff6600',
+    });
+    speakerAccent.setOrigin(0, 0.5);
+    this.panel.add(speakerAccent);
 
     // Speaker name
     this.speakerText = this.scene.add.text(
-      -panelWidth / 2 + 20,
-      -panelHeight / 2 + 15,
+      -halfW + 36,
+      -halfH + 23,
       '',
       {
-        fontSize: '16px',
-        fontFamily: 'monospace',
-        color: '#fbbf24',
-        fontStyle: 'bold',
+        fontSize: '13px',
+        fontFamily: 'Cinzel, Georgia, serif',
+        color: '#ffffff',
       }
     );
+    this.speakerText.setOrigin(0, 0.5);
     this.panel.add(this.speakerText);
 
     // Dialogue text
     this.dialogueText = this.scene.add.text(
-      -panelWidth / 2 + 20,
-      -panelHeight / 2 + 45,
+      -halfW + 25,
+      -halfH + 48,
       '',
       {
-        fontSize: '14px',
-        fontFamily: 'monospace',
-        color: '#e5e7eb',
-        wordWrap: { width: panelWidth - 40 },
-        lineSpacing: 4,
+        fontSize: '13px',
+        fontFamily: 'Roboto Mono, Courier New, monospace',
+        color: '#cccccc',
+        wordWrap: { width: panelWidth - 50 },
+        lineSpacing: 6,
       }
     );
     this.panel.add(this.dialogueText);
 
-    // Continue hint
-    this.continueHint = this.scene.add.text(
-      panelWidth / 2 - 20,
-      panelHeight / 2 - 20,
-      '[SPACE/ENTER]',
-      {
-        fontSize: '10px',
-        fontFamily: 'monospace',
-        color: '#6b7280',
-      }
-    );
-    this.continueHint.setOrigin(1, 1);
-    this.panel.add(this.continueHint);
+    // Continue hint container
+    const hintContainer = this.scene.add.container(halfW - 20, halfH - 18);
 
-    // Animate hint
+    // Continue icon (animated arrow)
+    this.continueIcon = this.scene.add.text(0, 0, '▶', {
+      fontSize: '12px',
+      color: '#ff6600',
+    });
+    this.continueIcon.setOrigin(1, 0.5);
+    hintContainer.add(this.continueIcon);
+
+    // Continue text
+    this.continueHint = this.scene.add.text(-18, 0, 'SPACE', {
+      fontSize: '9px',
+      fontFamily: 'Roboto Mono, Courier New, monospace',
+      color: '#666666',
+    });
+    this.continueHint.setOrigin(1, 0.5);
+    hintContainer.add(this.continueHint);
+
+    this.panel.add(hintContainer);
+
+    // Animate continue icon
     this.scene.tweens.add({
-      targets: this.continueHint,
+      targets: this.continueIcon,
+      x: 3,
+      duration: 500,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+
+    // Pulse the hint
+    this.scene.tweens.add({
+      targets: [this.continueHint, this.continueIcon],
       alpha: { from: 0.5, to: 1 },
       duration: 800,
       yoyo: true,
@@ -119,13 +187,13 @@ export class DialogueUI {
 
     // Animate panel in
     this.panel.setAlpha(0);
-    this.panel.y += 20;
+    this.panel.y += 30;
     this.scene.tweens.add({
       targets: this.panel,
       alpha: 1,
       y: panelY,
-      duration: 200,
-      ease: 'Power2',
+      duration: 250,
+      ease: 'Back.easeOut',
     });
   }
 
@@ -136,11 +204,11 @@ export class DialogueUI {
     if (!line) return;
 
     // Update speaker
-    this.speakerText.setText(line.speaker);
+    this.speakerText.setText(line.speaker.toUpperCase());
     if (line.speakerColor) {
       this.speakerText.setColor(line.speakerColor);
     } else {
-      this.speakerText.setColor('#fbbf24');
+      this.speakerText.setColor('#ffffff');
     }
 
     // Typewriter effect for dialogue
@@ -159,7 +227,7 @@ export class DialogueUI {
     let charIndex = 0;
 
     this.typewriterTimer = this.scene.time.addEvent({
-      delay: 25,
+      delay: 22,
       callback: () => {
         if (!this.dialogueText || !this.isVisible) {
           this.stopTypewriter();
@@ -253,6 +321,7 @@ export class DialogueUI {
           this.speakerText = null;
           this.dialogueText = null;
           this.continueHint = null;
+          this.continueIcon = null;
         },
       });
     }
