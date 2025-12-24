@@ -277,6 +277,12 @@ export class GameScene extends Phaser.Scene {
     chest.setData('opened', true);
     chest.setTexture('chest_open');
 
+    // Notify minimap
+    const room = chest.getData('room') as Room;
+    if (room) {
+      this.minimapUI.markChestOpened(room.id);
+    }
+
     // Remove glow
     const glow = chest.getData('glow') as Phaser.GameObjects.Sprite;
     if (glow) {
@@ -354,6 +360,12 @@ export class GameScene extends Phaser.Scene {
     if (shrine.getData('used')) return;
 
     shrine.setData('used', true);
+
+    // Notify minimap
+    const room = shrine.getData('room') as Room;
+    if (room) {
+      this.minimapUI.markShrineUsed(room.id);
+    }
 
     // Heal player to full
     const healAmount = this.player.maxHp - this.player.hp;
