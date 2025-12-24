@@ -38,6 +38,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   public level: number = 1;
   public xp: number = 0;
   public xpToNextLevel: number = 100;
+  public gold: number = 0;
 
   public inventory: InventorySystem;
 
@@ -197,6 +198,24 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.hp = Math.min(this.maxHp, this.hp + amount);
   }
 
+  addGold(amount: number): void {
+    this.gold += amount;
+    this.scene.events.emit('goldChanged', this.gold);
+  }
+
+  spendGold(amount: number): boolean {
+    if (this.gold >= amount) {
+      this.gold -= amount;
+      this.scene.events.emit('goldChanged', this.gold);
+      return true;
+    }
+    return false;
+  }
+
+  canAfford(amount: number): boolean {
+    return this.gold >= amount;
+  }
+
   gainXP(amount: number): void {
     this.xp += amount;
 
@@ -309,6 +328,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     baseDefense: number;
     baseSpeed: number;
     statPoints: number;
+    gold: number;
   } {
     return {
       level: this.level,
@@ -319,7 +339,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       baseAttack: this.baseAttack,
       baseDefense: this.baseDefense,
       baseSpeed: this.baseSpeed,
-      statPoints: 0,
+      statPoints: this.statPoints,
+      gold: this.gold,
     };
   }
 
@@ -333,6 +354,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     baseDefense: number;
     baseSpeed: number;
     statPoints: number;
+    gold?: number;
   }): void {
     this.level = data.level;
     this.xp = data.xp;
@@ -341,6 +363,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.baseAttack = data.baseAttack;
     this.baseDefense = data.baseDefense;
     this.baseSpeed = data.baseSpeed;
+    this.statPoints = data.statPoints || 0;
+    this.gold = data.gold || 0;
     this.recalculateStats();
     this.hp = data.hp;
   }

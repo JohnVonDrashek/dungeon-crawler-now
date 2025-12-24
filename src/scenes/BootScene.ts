@@ -651,5 +651,155 @@ export class BootScene extends Phaser.Scene {
     skullMarkerGraphics.fillRect(9, 11, 1, 2);
     skullMarkerGraphics.generateTexture('skull_marker', TILE_SIZE, TILE_SIZE);
     skullMarkerGraphics.destroy();
+
+    // === GOLD COIN ===
+    const goldCoinGraphics = this.make.graphics({ x: 0, y: 0 });
+    // Coin body
+    goldCoinGraphics.fillStyle(0xffd700);
+    goldCoinGraphics.fillCircle(6, 6, 5);
+    // Highlight
+    goldCoinGraphics.fillStyle(0xffec8b);
+    goldCoinGraphics.fillCircle(4, 4, 2);
+    // Shadow/depth
+    goldCoinGraphics.fillStyle(0xdaa520);
+    goldCoinGraphics.fillCircle(7, 7, 2);
+    goldCoinGraphics.generateTexture('gold_coin', 12, 12);
+    goldCoinGraphics.destroy();
+
+    // === TAVERN / SHOP ROOM ===
+
+    // Tavern floor (warm wood planks)
+    const tavernFloorGraphics = this.make.graphics({ x: 0, y: 0 });
+    tavernFloorGraphics.fillStyle(0x8b6914);
+    tavernFloorGraphics.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+    // Wood grain lines
+    tavernFloorGraphics.fillStyle(0x7a5c10);
+    tavernFloorGraphics.fillRect(0, 3, TILE_SIZE, 1);
+    tavernFloorGraphics.fillRect(0, 8, TILE_SIZE, 1);
+    tavernFloorGraphics.fillRect(0, 13, TILE_SIZE, 1);
+    // Plank dividers
+    tavernFloorGraphics.fillStyle(0x6b4f0e);
+    tavernFloorGraphics.fillRect(5, 0, 1, TILE_SIZE);
+    tavernFloorGraphics.fillRect(11, 0, 1, TILE_SIZE);
+    tavernFloorGraphics.generateTexture('floor_tavern', TILE_SIZE, TILE_SIZE);
+    tavernFloorGraphics.destroy();
+
+    // Tavern wall (darker wood panels)
+    const tavernWallGraphics = this.make.graphics({ x: 0, y: 0 });
+    tavernWallGraphics.fillStyle(0x5c4033);
+    tavernWallGraphics.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+    // Panel lines
+    tavernWallGraphics.fillStyle(0x4a3328);
+    tavernWallGraphics.fillRect(0, 0, TILE_SIZE, 2);
+    tavernWallGraphics.fillRect(0, 7, TILE_SIZE, 1);
+    tavernWallGraphics.fillRect(0, 14, TILE_SIZE, 2);
+    // Vertical divider
+    tavernWallGraphics.fillRect(7, 0, 2, TILE_SIZE);
+    tavernWallGraphics.generateTexture('wall_tavern', TILE_SIZE, TILE_SIZE);
+    tavernWallGraphics.destroy();
+
+    // Shopkeeper (hooded merchant)
+    const shopkeeperGraphics = this.make.graphics({ x: 0, y: 0 });
+    // Robe body
+    shopkeeperGraphics.fillStyle(0x78350f);
+    shopkeeperGraphics.fillTriangle(8, 4, 2, 15, 14, 15);
+    // Hood
+    shopkeeperGraphics.fillStyle(0x5c2a0a);
+    shopkeeperGraphics.fillCircle(8, 5, 5);
+    shopkeeperGraphics.fillTriangle(3, 5, 8, 0, 13, 5);
+    // Face shadow (mysterious)
+    shopkeeperGraphics.fillStyle(0x1f1f1f);
+    shopkeeperGraphics.fillCircle(8, 6, 3);
+    // Eyes (glowing gold)
+    shopkeeperGraphics.fillStyle(0xfbbf24);
+    shopkeeperGraphics.fillRect(6, 5, 1, 1);
+    shopkeeperGraphics.fillRect(9, 5, 1, 1);
+    // Gold trim on robe
+    shopkeeperGraphics.fillStyle(0xfbbf24);
+    shopkeeperGraphics.fillRect(2, 14, 12, 1);
+    shopkeeperGraphics.generateTexture('shopkeeper', TILE_SIZE, TILE_SIZE);
+    shopkeeperGraphics.destroy();
+
+    // Heal fountain (stone fountain with blue water)
+    const fountainGraphics = this.make.graphics({ x: 0, y: 0 });
+    // Base
+    fountainGraphics.fillStyle(0x6b7280);
+    fountainGraphics.fillRect(2, 12, 12, 4);
+    // Basin
+    fountainGraphics.fillStyle(0x4b5563);
+    fountainGraphics.fillRect(1, 8, 14, 5);
+    // Water
+    fountainGraphics.fillStyle(0x3b82f6);
+    fountainGraphics.fillRect(2, 9, 12, 3);
+    fountainGraphics.fillStyle(0x60a5fa);
+    fountainGraphics.fillRect(3, 10, 4, 1);
+    // Center pillar
+    fountainGraphics.fillStyle(0x6b7280);
+    fountainGraphics.fillRect(6, 4, 4, 6);
+    // Water spout
+    fountainGraphics.fillStyle(0x93c5fd);
+    fountainGraphics.fillRect(7, 2, 2, 3);
+    fountainGraphics.generateTexture('fountain', TILE_SIZE, TILE_SIZE);
+    fountainGraphics.destroy();
+
+    // Reroll crystal (purple floating crystal)
+    const rerollCrystalGraphics = this.make.graphics({ x: 0, y: 0 });
+    // Crystal body (diamond shape)
+    rerollCrystalGraphics.fillStyle(0x8b5cf6);
+    rerollCrystalGraphics.fillTriangle(8, 1, 3, 8, 13, 8); // Top
+    rerollCrystalGraphics.fillTriangle(8, 15, 3, 8, 13, 8); // Bottom
+    // Inner shine
+    rerollCrystalGraphics.fillStyle(0xc4b5fd);
+    rerollCrystalGraphics.fillTriangle(8, 3, 5, 8, 11, 8);
+    // Highlight
+    rerollCrystalGraphics.fillStyle(0xede9fe);
+    rerollCrystalGraphics.fillRect(6, 5, 2, 2);
+    // Floating particles
+    rerollCrystalGraphics.fillStyle(0xa78bfa, 0.7);
+    rerollCrystalGraphics.fillCircle(2, 4, 1);
+    rerollCrystalGraphics.fillCircle(14, 6, 1);
+    rerollCrystalGraphics.fillCircle(3, 12, 1);
+    rerollCrystalGraphics.generateTexture('reroll_crystal', TILE_SIZE, TILE_SIZE);
+    rerollCrystalGraphics.destroy();
+
+    // Exit portal (green swirling vortex)
+    const exitPortalGraphics = this.make.graphics({ x: 0, y: 0 });
+    // Outer glow
+    exitPortalGraphics.fillStyle(0x10b981, 0.3);
+    exitPortalGraphics.fillCircle(8, 8, 8);
+    // Swirl rings
+    exitPortalGraphics.lineStyle(2, 0x34d399);
+    exitPortalGraphics.strokeCircle(8, 8, 6);
+    exitPortalGraphics.lineStyle(2, 0x6ee7b7);
+    exitPortalGraphics.strokeCircle(8, 8, 4);
+    // Center
+    exitPortalGraphics.fillStyle(0xa7f3d0);
+    exitPortalGraphics.fillCircle(8, 8, 2);
+    // Swirl marks
+    exitPortalGraphics.fillStyle(0x34d399);
+    exitPortalGraphics.fillRect(7, 2, 2, 2);
+    exitPortalGraphics.fillRect(12, 7, 2, 2);
+    exitPortalGraphics.fillRect(7, 12, 2, 2);
+    exitPortalGraphics.fillRect(2, 7, 2, 2);
+    exitPortalGraphics.generateTexture('exit_portal', TILE_SIZE, TILE_SIZE);
+    exitPortalGraphics.destroy();
+
+    // Wall torch (decorative)
+    const torchGraphics = this.make.graphics({ x: 0, y: 0 });
+    // Bracket
+    torchGraphics.fillStyle(0x78350f);
+    torchGraphics.fillRect(6, 8, 4, 8);
+    // Torch head
+    torchGraphics.fillStyle(0x92400e);
+    torchGraphics.fillRect(5, 6, 6, 4);
+    // Flame
+    torchGraphics.fillStyle(0xf97316);
+    torchGraphics.fillTriangle(8, 0, 4, 7, 12, 7);
+    torchGraphics.fillStyle(0xfbbf24);
+    torchGraphics.fillTriangle(8, 2, 6, 6, 10, 6);
+    torchGraphics.fillStyle(0xfef3c7);
+    torchGraphics.fillCircle(8, 4, 1);
+    torchGraphics.generateTexture('torch', TILE_SIZE, TILE_SIZE);
+    torchGraphics.destroy();
   }
 }

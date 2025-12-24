@@ -27,6 +27,7 @@ export class GameScene extends Phaser.Scene {
   private enemyProjectiles!: Phaser.Physics.Arcade.Group;
   private itemDrops!: Phaser.Physics.Arcade.Group;
   private weaponDrops!: Phaser.Physics.Arcade.Group;
+  private goldDrops!: Phaser.Physics.Arcade.Group;
   private healthBars: Map<Enemy, Phaser.GameObjects.Container> = new Map();
   private combatSystem!: CombatSystem;
   private lootSystem!: LootSystem;
@@ -74,6 +75,23 @@ export class GameScene extends Phaser.Scene {
     const spawnY = this.dungeon.spawnPoint.y * TILE_SIZE + TILE_SIZE / 2;
     this.player = new Player(this, spawnX, spawnY);
 
+    // Restore player from ShopScene if coming from there
+    const shopData = this.registry.get('shopData') as {
+      floor: number;
+      playerStats: ReturnType<Player['getSaveData']>;
+      inventorySerialized: string;
+    } | undefined;
+
+    if (shopData) {
+      this.player.restoreFromSave(shopData.playerStats);
+      this.player.inventory.deserialize(shopData.inventorySerialized);
+      this.player.recalculateStats();
+      // Clear shopData so it doesn't persist across sessions
+      this.registry.remove('shopData');
+      // Save progress after shop
+      this.saveGame();
+    }
+
     // Create special room object groups (must be before addRoomDecorations)
     this.chests = this.physics.add.group();
     this.shrines = this.physics.add.group();
@@ -98,6 +116,7 @@ export class GameScene extends Phaser.Scene {
     this.enemyProjectiles = this.physics.add.group({ runChildUpdate: true });
     this.itemDrops = this.physics.add.group();
     this.weaponDrops = this.physics.add.group();
+    this.goldDrops = this.physics.add.group();
 
     // Create enemies group (enemies spawn on room entry)
     this.enemies = this.physics.add.group({ runChildUpdate: false });
@@ -721,6 +740,12 @@ export class GameScene extends Phaser.Scene {
       undefined, this
     );
 
+    this.physics.add.overlap(
+      this.player, this.goldDrops,
+      this.handleGoldPickup as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
+      undefined, this
+    );
+
     // Door collision
     this.physics.add.collider(this.player, this.roomManager.getDoorGroup());
     this.physics.add.collider(this.enemies, this.roomManager.getDoorGroup());
@@ -832,21 +857,29 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    this.floor++;
-    this.registry.set('floor', this.floor);
     this.audioSystem.play('sfx_stairs', 0.5);
 
-    // Auto-save progress
-    this.saveGame();
+    // Show shop before transitioning to next floor
+    this.showShop();
+  }
 
-    this.cameras.main.flash(300, 100, 255, 100);
+  private showShop(): void {
+    // Save player state to registry for ShopScene
+    this.registry.set('shopData', {
+      floor: this.floor,
+      playerStats: this.player.getSaveData(),
+      inventorySerialized: this.player.inventory.serialize(),
+    });
 
-    this.time.delayedCall(300, () => {
-      this.cameras.main.fade(500, 0, 0, 0, false, (_camera: Phaser.Cameras.Scene2D.Camera, progress: number) => {
-        if (progress === 1) {
-          this.scene.restart();
-        }
-      });
+    // Also save stats to registry
+    this.registry.set('enemiesKilled', this.enemiesKilled);
+    this.registry.set('itemsCollected', this.itemsCollected);
+
+    // Transition to shop scene
+    this.cameras.main.fade(300, 0, 0, 0, false, (_camera: Phaser.Cameras.Scene2D.Camera, progress: number) => {
+      if (progress === 1) {
+        this.scene.start('ShopScene');
+      }
     });
   }
 
@@ -1008,6 +1041,81 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  private spawnGoldDrop(x: number, y: number, amount: number): void {
+    // Spawn multiple coins for larger amounts
+    const coinCount = Math.min(Math.ceil(amount / 10), 5);
+    const totalAmount = amount;
+
+    for (let i = 0; i < coinCount; i++) {
+      const offsetX = (Math.random() - 0.5) * 20;
+      const offsetY = (Math.random() - 0.5) * 20;
+      const coinX = x + offsetX;
+      const coinY = y + offsetY;
+
+      const coin = this.goldDrops.create(coinX, coinY, 'gold_coin') as Phaser.Physics.Arcade.Sprite;
+      coin.setData('amount', Math.ceil(totalAmount / coinCount));
+      coin.setDepth(5);
+
+      // Pop-out animation
+      coin.setScale(0);
+      const delay = i * 50;
+      this.time.delayedCall(delay, () => {
+        this.tweens.add({
+          targets: coin,
+          scale: 1,
+          y: coinY - 10,
+          duration: 200,
+          ease: 'Back.easeOut',
+        });
+
+        // Floating animation after pop
+        this.time.delayedCall(200, () => {
+          this.tweens.add({
+            targets: coin,
+            y: coinY - 14,
+            duration: 400,
+            yoyo: true,
+            repeat: -1,
+            ease: 'Sine.easeInOut',
+          });
+        });
+      });
+    }
+  }
+
+  private handleGoldPickup(
+    _playerObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject,
+    goldObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject
+  ): void {
+    const coin = goldObj as Phaser.Physics.Arcade.Sprite;
+
+    // Immediately disable physics to prevent re-triggering
+    if (coin.body) {
+      coin.body.enable = false;
+    }
+    this.goldDrops.remove(coin, false, false);
+
+    const amount = coin.getData('amount') as number;
+
+    this.player.addGold(amount);
+    this.audioSystem.play('sfx_pickup', 0.3);
+
+    // Collect animation - fly to HUD
+    this.tweens.killTweensOf(coin);
+    this.tweens.add({
+      targets: coin,
+      x: this.cameras.main.scrollX + 10,
+      y: this.cameras.main.scrollY + 80,
+      alpha: 0,
+      scale: 0.5,
+      duration: 300,
+      ease: 'Quad.easeIn',
+      onComplete: () => coin.destroy(),
+    });
+
+    this.updateHUD();
+  }
+
   private handleWeaponPickup(
     _playerObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject,
     weaponObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject
@@ -1118,6 +1226,10 @@ export class GameScene extends Phaser.Scene {
         const weapon = Weapon.createRandom(this.floor + 5);
         this.spawnWeaponDrop(enemy.x + 24, enemy.y, weapon);
 
+        // Bosses drop lots of gold
+        const bossGold = 50 + this.floor * 20;
+        this.spawnGoldDrop(enemy.x - 24, enemy.y, bossGold);
+
         // Check for victory on final boss
         if (this.isFinalBoss) {
           this.time.delayedCall(1500, () => {
@@ -1141,6 +1253,12 @@ export class GameScene extends Phaser.Scene {
           const weapon = Weapon.createRandom(this.floor + (isChallengeEnemy ? 2 : 0));
           this.spawnWeaponDrop(enemy.x, enemy.y, weapon);
         }
+
+        // Gold drops - all enemies drop some gold
+        const baseGold = 5 + this.floor * 2;
+        const goldAmount = baseGold + Math.floor(Math.random() * baseGold);
+        const goldMultiplier = isChallengeEnemy ? 2 : 1;
+        this.spawnGoldDrop(enemy.x, enemy.y, goldAmount * goldMultiplier);
       }
     });
 
@@ -1670,6 +1788,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private hudText!: Phaser.GameObjects.Text;
+  private goldText!: Phaser.GameObjects.Text;
   private weaponHUD!: Phaser.GameObjects.Container;
   private weaponIcon!: Phaser.GameObjects.Sprite;
   private weaponText!: Phaser.GameObjects.Text;
@@ -1683,6 +1802,16 @@ export class GameScene extends Phaser.Scene {
     });
     this.hudText.setScrollFactor(0);
     this.hudText.setDepth(100);
+
+    // Gold display
+    this.goldText = this.add.text(10, 70, '', {
+      fontSize: '14px',
+      color: '#ffd700',
+      backgroundColor: '#00000080',
+      padding: { x: 8, y: 4 },
+    });
+    this.goldText.setScrollFactor(0);
+    this.goldText.setDepth(100);
 
     // Weapon HUD in bottom-right
     this.weaponHUD = this.add.container(
@@ -1751,6 +1880,9 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.hudText.setText(lines.join('\n'));
+
+    // Update gold display
+    this.goldText.setText(`💰 ${this.player.gold}`);
   }
 
   private updateWeaponHUD(): void {

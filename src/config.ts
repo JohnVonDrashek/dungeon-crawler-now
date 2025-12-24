@@ -3,6 +3,7 @@ import { GAME_WIDTH, GAME_HEIGHT } from './utils/constants';
 import { BootScene } from './scenes/BootScene';
 import { MenuScene } from './scenes/MenuScene';
 import { GameScene } from './scenes/GameScene';
+import { ShopScene } from './scenes/ShopScene';
 import { GameOverScene } from './scenes/GameOverScene';
 import { VictoryScene } from './scenes/VictoryScene';
 
@@ -20,7 +21,7 @@ export const gameConfig: Phaser.Types.Core.GameConfig = {
       debug: false,
     },
   },
-  scene: [BootScene, MenuScene, GameScene, GameOverScene, VictoryScene],
+  scene: [BootScene, MenuScene, GameScene, ShopScene, GameOverScene, VictoryScene],
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
