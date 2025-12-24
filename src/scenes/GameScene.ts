@@ -150,20 +150,6 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private spawnBoss(): void {
-    const exitRoom = this.dungeon.rooms[this.dungeon.rooms.length - 1];
-    const boss = new BossEnemy(
-      this,
-      exitRoom.centerX * TILE_SIZE + TILE_SIZE / 2,
-      exitRoom.centerY * TILE_SIZE + TILE_SIZE / 2,
-      this.floor
-    );
-    boss.setTarget(this.player);
-    boss.setProjectileGroup(this.enemyProjectiles);
-    this.enemies.add(boss as unknown as Phaser.GameObjects.GameObject);
-    this.createHealthBar(boss);
-  }
-
   private spawnEnemiesInRoom(room: Room): void {
     const exitRoom = this.dungeon.rooms[this.dungeon.rooms.length - 1];
     const isBossRoom = this.isBossFloor && room.id === exitRoom.id;
@@ -239,8 +225,9 @@ export class GameScene extends Phaser.Scene {
       for (const pos of spawnPositions) {
         let enemy: Enemy;
         if (isBossRoom) {
-          enemy = new BossEnemy(this, pos.x, pos.y, this.floor);
-          enemy.setProjectileGroup(this.enemyProjectiles);
+          const boss = new BossEnemy(this, pos.x, pos.y, this.floor);
+          boss.setProjectileGroup(this.enemyProjectiles);
+          enemy = boss;
         } else {
           enemy = this.createEnemy(pos.x, pos.y);
         }
