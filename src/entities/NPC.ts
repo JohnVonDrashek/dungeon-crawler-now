@@ -207,6 +207,7 @@ export const BOSS_WARNINGS: Record<SinWorld, DialogueLine[]> = {
 
 export class NPC extends Phaser.Physics.Arcade.Sprite {
   private npcData: NPCData;
+  private interactIndicator: Phaser.GameObjects.Text | null = null;
 
   constructor(scene: Phaser.Scene, x: number, y: number, data: NPCData) {
     super(scene, x, y, data.texture);
@@ -246,6 +247,50 @@ export class NPC extends Phaser.Physics.Arcade.Sprite {
       repeat: -1,
       ease: 'Sine.easeInOut',
     });
+
+    // Add floating interaction indicator above NPC
+    this.interactIndicator = scene.add.text(x, y - TILE_SIZE * 1.2, '!', {
+      fontSize: '18px',
+      fontFamily: 'monospace',
+      color: '#fbbf24',
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 3,
+    });
+    this.interactIndicator.setOrigin(0.5);
+    this.interactIndicator.setDepth(6);
+
+    // Bounce animation for indicator
+    scene.tweens.add({
+      targets: this.interactIndicator,
+      y: y - TILE_SIZE * 1.4,
+      duration: 800,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+
+    // Pulse animation for indicator
+    scene.tweens.add({
+      targets: this.interactIndicator,
+      scale: { from: 1, to: 1.2 },
+      duration: 600,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+  }
+
+  hideIndicator(): void {
+    if (this.interactIndicator) {
+      this.interactIndicator.setVisible(false);
+    }
+  }
+
+  showIndicator(): void {
+    if (this.interactIndicator) {
+      this.interactIndicator.setVisible(true);
+    }
   }
 
   getData(): NPCData {

@@ -199,11 +199,12 @@ export class GameScene extends Phaser.Scene {
 
   update(time: number, delta: number): void {
     if (this.inventoryUI.getIsVisible() || this.levelUpUI.getIsVisible() || this.settingsUI.getIsVisible()) return;
-    if (this.dialogueUI.getIsVisible() || this.debugMenuVisible) return;
+    if (this.debugMenuVisible) return;
 
     // Reset speed modifier each frame (will be reapplied by SlothEnemy if in range)
     this.player.resetSpeedModifier();
 
+    // Allow movement even during dialogue
     this.player.update(time, delta);
 
     // Check for room entry (returns room if entering a new unvisited room)
@@ -595,10 +596,10 @@ export class GameScene extends Phaser.Scene {
 
   private showNPCPrompt(): void {
     if (this.nearbyNPC && !this.dialogueUI.getIsVisible()) {
-      // Show interact hint near the NPC
+      // Show interact hint at bottom of screen (like Hub)
       const npcData = this.nearbyNPC.getData();
       this.lorePrompt.setText(`[R] Talk to ${npcData.name}`);
-      this.lorePrompt.setPosition(this.nearbyNPC.x, this.nearbyNPC.y - TILE_SIZE);
+      this.lorePrompt.setPosition(this.cameras.main.width / 2, this.cameras.main.height - 40);
       this.lorePrompt.setOrigin(0.5);
       this.lorePrompt.setVisible(true);
     }
@@ -608,8 +609,16 @@ export class GameScene extends Phaser.Scene {
     if (!this.nearbyNPC || this.dialogueUI.getIsVisible()) return;
 
     this.lorePrompt.setVisible(false);
+    // Hide the NPC's indicator while talking
+    this.nearbyNPC.hideIndicator();
+
+    const npcRef = this.nearbyNPC;
     this.dialogueUI.show({
       lines: this.nearbyNPC.getDialogue(),
+      onComplete: () => {
+        // Show the indicator again when dialogue is done
+        npcRef.showIndicator();
+      },
     });
   }
 

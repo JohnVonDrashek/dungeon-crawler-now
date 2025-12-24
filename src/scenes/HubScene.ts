@@ -834,8 +834,15 @@ export class HubScene extends Phaser.Scene {
     });
 
     if (npc) {
+      // Hide indicator while talking
+      npc.hideIndicator();
+
       this.dialogueUI.show({
         lines: npc.getDialogue(),
+        onComplete: () => {
+          // Show indicator again when done
+          npc.showIndicator();
+        },
       });
     }
   }
