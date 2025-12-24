@@ -41,7 +41,7 @@ export class GameOverScene extends Phaser.Scene {
     title.setOrigin(0.5);
 
     // Death message
-    const deathMsg = this.add.text(width / 2, height * 0.32, 'You have fallen in the dungeon...', {
+    const deathMsg = this.add.text(width / 2, height * 0.32, 'Your journey has ended...', {
       fontSize: '18px',
       fontFamily: 'monospace',
       color: '#9ca3af',
@@ -52,7 +52,7 @@ export class GameOverScene extends Phaser.Scene {
     const statsBox = this.add.rectangle(width / 2, height * 0.52, 300, 180, 0x1f2937);
     statsBox.setStrokeStyle(2, 0x374151);
 
-    const statsTitle = this.add.text(width / 2, height * 0.42, '- Final Stats -', {
+    const statsTitle = this.add.text(width / 2, height * 0.42, "- Soul's Record -", {
       fontSize: '20px',
       fontFamily: 'monospace',
       color: '#8b5cf6',
@@ -60,9 +60,9 @@ export class GameOverScene extends Phaser.Scene {
     statsTitle.setOrigin(0.5);
 
     const statsText = this.add.text(width / 2, height * 0.52, [
-      `Floor Reached: ${this.stats.floor}`,
+      `Stage Reached: ${this.stats.floor}`,
       `Level: ${this.stats.level}`,
-      `Enemies Slain: ${this.stats.enemiesKilled}`,
+      `Enemies Overcome: ${this.stats.enemiesKilled}`,
       `Items Found: ${this.stats.itemsCollected}`,
     ].join('\n'), {
       fontSize: '18px',

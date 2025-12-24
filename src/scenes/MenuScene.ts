@@ -50,7 +50,7 @@ export class MenuScene extends Phaser.Scene {
 
       // Show save info
       const saveText = this.add.text(width / 2, height * 0.76,
-        `Floor ${saveInfo.floor} | Level ${saveInfo.level}`, {
+        `Stage ${saveInfo.floor} | Level ${saveInfo.level}`, {
         fontSize: '14px',
         fontFamily: 'monospace',
         color: '#6b7280',

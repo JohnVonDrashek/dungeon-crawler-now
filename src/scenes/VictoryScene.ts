@@ -46,7 +46,7 @@ export class VictoryScene extends Phaser.Scene {
 
     // Victory message
     const message = this.add.text(width / 2, height * 0.32,
-      'You have conquered the dungeon\nand defeated the Final Boss!', {
+      'You have completed the purification\nand overcome the final trial!', {
       fontSize: '18px',
       fontFamily: 'monospace',
       color: '#e5e7eb',
@@ -58,7 +58,7 @@ export class VictoryScene extends Phaser.Scene {
     const statsBox = this.add.rectangle(width / 2, height * 0.54, 320, 200, 0x1f2937);
     statsBox.setStrokeStyle(3, 0xfbbf24);
 
-    const statsTitle = this.add.text(width / 2, height * 0.43, '- Champion Stats -', {
+    const statsTitle = this.add.text(width / 2, height * 0.43, "- Soul's Journey -", {
       fontSize: '22px',
       fontFamily: 'monospace',
       color: '#fbbf24',
@@ -66,9 +66,9 @@ export class VictoryScene extends Phaser.Scene {
     statsTitle.setOrigin(0.5);
 
     const statsText = this.add.text(width / 2, height * 0.55, [
-      `Floors Cleared: ${this.stats.floor}`,
+      `Stages Cleared: ${this.stats.floor}`,
       `Final Level: ${this.stats.level}`,
-      `Enemies Vanquished: ${this.stats.enemiesKilled}`,
+      `Trials Overcome: ${this.stats.enemiesKilled}`,
       `Treasures Found: ${this.stats.itemsCollected}`,
     ].join('\n'), {
       fontSize: '18px',

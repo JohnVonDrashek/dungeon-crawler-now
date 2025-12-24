@@ -668,55 +668,70 @@ export class BootScene extends Phaser.Scene {
 
     // === TAVERN / SHOP ROOM ===
 
-    // Tavern floor (warm wood planks)
+    // Shrine floor (sacred stone tiles)
     const tavernFloorGraphics = this.make.graphics({ x: 0, y: 0 });
-    tavernFloorGraphics.fillStyle(0x8b6914);
+    tavernFloorGraphics.fillStyle(0x4a5568);
     tavernFloorGraphics.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
-    // Wood grain lines
-    tavernFloorGraphics.fillStyle(0x7a5c10);
-    tavernFloorGraphics.fillRect(0, 3, TILE_SIZE, 1);
-    tavernFloorGraphics.fillRect(0, 8, TILE_SIZE, 1);
-    tavernFloorGraphics.fillRect(0, 13, TILE_SIZE, 1);
-    // Plank dividers
-    tavernFloorGraphics.fillStyle(0x6b4f0e);
-    tavernFloorGraphics.fillRect(5, 0, 1, TILE_SIZE);
-    tavernFloorGraphics.fillRect(11, 0, 1, TILE_SIZE);
+    // Stone tile pattern
+    tavernFloorGraphics.fillStyle(0x3d4451);
+    tavernFloorGraphics.fillRect(0, 0, TILE_SIZE, 1);
+    tavernFloorGraphics.fillRect(0, 0, 1, TILE_SIZE);
+    tavernFloorGraphics.fillRect(7, 0, 1, TILE_SIZE);
+    tavernFloorGraphics.fillRect(0, 7, TILE_SIZE, 1);
+    // Subtle golden cross inlay hint
+    tavernFloorGraphics.fillStyle(0x6b6b4a);
+    tavernFloorGraphics.fillRect(7, 3, 2, 10);
+    tavernFloorGraphics.fillRect(4, 6, 8, 2);
     tavernFloorGraphics.generateTexture('floor_tavern', TILE_SIZE, TILE_SIZE);
     tavernFloorGraphics.destroy();
 
-    // Tavern wall (darker wood panels)
+    // Shrine wall (sacred stone with golden trim)
     const tavernWallGraphics = this.make.graphics({ x: 0, y: 0 });
-    tavernWallGraphics.fillStyle(0x5c4033);
+    tavernWallGraphics.fillStyle(0x374151);
     tavernWallGraphics.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
-    // Panel lines
-    tavernWallGraphics.fillStyle(0x4a3328);
+    // Stone texture
+    tavernWallGraphics.fillStyle(0x2d3748);
     tavernWallGraphics.fillRect(0, 0, TILE_SIZE, 2);
     tavernWallGraphics.fillRect(0, 7, TILE_SIZE, 1);
     tavernWallGraphics.fillRect(0, 14, TILE_SIZE, 2);
-    // Vertical divider
-    tavernWallGraphics.fillRect(7, 0, 2, TILE_SIZE);
+    // Golden trim at bottom
+    tavernWallGraphics.fillStyle(0xb8860b);
+    tavernWallGraphics.fillRect(0, 14, TILE_SIZE, 2);
     tavernWallGraphics.generateTexture('wall_tavern', TILE_SIZE, TILE_SIZE);
     tavernWallGraphics.destroy();
 
-    // Shopkeeper (hooded merchant)
+    // Guardian Angel (shopkeeper)
     const shopkeeperGraphics = this.make.graphics({ x: 0, y: 0 });
-    // Robe body
-    shopkeeperGraphics.fillStyle(0x78350f);
-    shopkeeperGraphics.fillTriangle(8, 4, 2, 15, 14, 15);
-    // Hood
-    shopkeeperGraphics.fillStyle(0x5c2a0a);
-    shopkeeperGraphics.fillCircle(8, 5, 5);
-    shopkeeperGraphics.fillTriangle(3, 5, 8, 0, 13, 5);
-    // Face shadow (mysterious)
-    shopkeeperGraphics.fillStyle(0x1f1f1f);
-    shopkeeperGraphics.fillCircle(8, 6, 3);
-    // Eyes (glowing gold)
+    // Wings (behind body)
+    shopkeeperGraphics.fillStyle(0xe5e7eb);
+    shopkeeperGraphics.fillTriangle(0, 8, 5, 4, 5, 12); // Left wing
+    shopkeeperGraphics.fillTriangle(16, 8, 11, 4, 11, 12); // Right wing
+    shopkeeperGraphics.fillStyle(0xf3f4f6);
+    shopkeeperGraphics.fillTriangle(1, 8, 5, 5, 5, 11);
+    shopkeeperGraphics.fillTriangle(15, 8, 11, 5, 11, 11);
+    // White robe body
+    shopkeeperGraphics.fillStyle(0xf9fafb);
+    shopkeeperGraphics.fillTriangle(8, 5, 3, 15, 13, 15);
+    // Robe shading
+    shopkeeperGraphics.fillStyle(0xe5e7eb);
+    shopkeeperGraphics.fillTriangle(8, 7, 4, 15, 8, 15);
+    // Head
+    shopkeeperGraphics.fillStyle(0xfcd9b6);
+    shopkeeperGraphics.fillCircle(8, 4, 3);
+    // Halo (golden ring)
     shopkeeperGraphics.fillStyle(0xfbbf24);
-    shopkeeperGraphics.fillRect(6, 5, 1, 1);
-    shopkeeperGraphics.fillRect(9, 5, 1, 1);
-    // Gold trim on robe
+    shopkeeperGraphics.fillCircle(8, 0, 3);
+    shopkeeperGraphics.fillStyle(0x1a1a2e);
+    shopkeeperGraphics.fillCircle(8, 0, 2);
     shopkeeperGraphics.fillStyle(0xfbbf24);
-    shopkeeperGraphics.fillRect(2, 14, 12, 1);
+    shopkeeperGraphics.fillCircle(8, 0, 1);
+    // Serene eyes
+    shopkeeperGraphics.fillStyle(0x60a5fa);
+    shopkeeperGraphics.fillRect(6, 3, 1, 1);
+    shopkeeperGraphics.fillRect(9, 3, 1, 1);
+    // Golden trim on robe
+    shopkeeperGraphics.fillStyle(0xfbbf24);
+    shopkeeperGraphics.fillRect(3, 14, 10, 1);
     shopkeeperGraphics.generateTexture('shopkeeper', TILE_SIZE, TILE_SIZE);
     shopkeeperGraphics.destroy();
 
@@ -801,5 +816,30 @@ export class BootScene extends Phaser.Scene {
     torchGraphics.fillCircle(8, 4, 1);
     torchGraphics.generateTexture('torch', TILE_SIZE, TILE_SIZE);
     torchGraphics.destroy();
+
+    // Wall candle/sconce (for dungeon atmosphere)
+    const candleGraphics = this.make.graphics({ x: 0, y: 0 });
+    // Metal sconce bracket
+    candleGraphics.fillStyle(0x4a4a4a);
+    candleGraphics.fillRect(6, 10, 4, 2);
+    candleGraphics.fillRect(7, 8, 2, 4);
+    // Candle body (cream/white)
+    candleGraphics.fillStyle(0xfff8dc);
+    candleGraphics.fillRect(6, 3, 4, 6);
+    // Candle top
+    candleGraphics.fillStyle(0xfffaf0);
+    candleGraphics.fillRect(7, 2, 2, 2);
+    // Wick
+    candleGraphics.fillStyle(0x1f1f1f);
+    candleGraphics.fillRect(7, 1, 2, 2);
+    // Flame (warm glow)
+    candleGraphics.fillStyle(0xf97316);
+    candleGraphics.fillTriangle(8, -2, 5, 3, 11, 3);
+    candleGraphics.fillStyle(0xfbbf24);
+    candleGraphics.fillTriangle(8, -1, 6, 2, 10, 2);
+    candleGraphics.fillStyle(0xfef3c7);
+    candleGraphics.fillCircle(8, 1, 1);
+    candleGraphics.generateTexture('candle', TILE_SIZE, TILE_SIZE);
+    candleGraphics.destroy();
   }
 }

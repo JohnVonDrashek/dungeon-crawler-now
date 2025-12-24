@@ -233,6 +233,9 @@ export class GameScene extends Phaser.Scene {
 
   private addRoomDecorations(): void {
     for (const room of this.dungeon.rooms) {
+      // Add candles to all rooms for atmosphere
+      this.addWallCandles(room);
+
       switch (room.type) {
         case RoomType.TREASURE:
           // Add chest in center
@@ -461,6 +464,59 @@ export class GameScene extends Phaser.Scene {
         ease: 'Sine.easeInOut',
       });
     }
+  }
+
+  private addWallCandles(room: Room): void {
+    // Add candles along walls for atmosphere
+    // Place candles at intervals along each wall, offset from corners
+
+    const candlePositions: { x: number; y: number }[] = [];
+
+    // Top wall (inside room, on wall)
+    const topY = room.y;
+    for (let x = room.x + 2; x < room.x + room.width - 2; x += 4) {
+      candlePositions.push({ x, y: topY });
+    }
+
+    // Bottom wall
+    const bottomY = room.y + room.height - 1;
+    for (let x = room.x + 2; x < room.x + room.width - 2; x += 4) {
+      candlePositions.push({ x, y: bottomY });
+    }
+
+    // Left wall
+    const leftX = room.x;
+    for (let y = room.y + 2; y < room.y + room.height - 2; y += 4) {
+      candlePositions.push({ x: leftX, y });
+    }
+
+    // Right wall
+    const rightX = room.x + room.width - 1;
+    for (let y = room.y + 2; y < room.y + room.height - 2; y += 4) {
+      candlePositions.push({ x: rightX, y });
+    }
+
+    // Create candle sprites with flickering animation
+    candlePositions.forEach((pos) => {
+      const candle = this.add.sprite(
+        pos.x * TILE_SIZE + TILE_SIZE / 2,
+        pos.y * TILE_SIZE + TILE_SIZE / 2,
+        'candle'
+      );
+      candle.setDepth(5);
+
+      // Subtle flicker animation
+      this.tweens.add({
+        targets: candle,
+        alpha: { from: 0.85, to: 1 },
+        scaleX: { from: 0.95, to: 1.05 },
+        duration: Phaser.Math.Between(150, 300),
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+        delay: Phaser.Math.Between(0, 500),
+      });
+    });
   }
 
   private spawnEnemiesInRoom(room: Room): void {
@@ -843,9 +899,9 @@ export class GameScene extends Phaser.Scene {
   private handleExitCollision(): void {
     if (!this.canExit) return;
 
-    // Block exit on final floor until boss is defeated
+    // Block exit on final floor until boss is overcome
     if (this.isFinalBoss && this.hasBossAlive()) {
-      this.showGameMessage('Defeat the boss first!');
+      this.showGameMessage('Overcome the final trial first!');
       return;
     }
 
@@ -1864,7 +1920,7 @@ export class GameScene extends Phaser.Scene {
   private updateHUD(): void {
     const enemyCount = this.enemies.getChildren().filter((e) => e.active).length;
     const itemCount = this.player.inventory.getItemCount();
-    const floorText = this.isBossFloor ? `Floor: ${this.floor} (BOSS)` : `Floor: ${this.floor}`;
+    const floorText = this.isBossFloor ? `Stage: ${this.floor} (BOSS)` : `Stage: ${this.floor}`;
 
     const lines = [
       floorText,

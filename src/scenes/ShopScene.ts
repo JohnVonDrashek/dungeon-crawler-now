@@ -213,30 +213,35 @@ export class ShopScene extends Phaser.Scene {
       this.physics.add.collider(this.player, walls);
     });
 
-    // Add decorative torches
-    const torchPositions = [
+    // Add decorative candles along walls
+    const candlePositions = [
       { x: 2, y: 1 },
       { x: this.ROOM_WIDTH - 3, y: 1 },
       { x: 2, y: this.ROOM_HEIGHT - 2 },
       { x: this.ROOM_WIDTH - 3, y: this.ROOM_HEIGHT - 2 },
+      { x: Math.floor(this.ROOM_WIDTH / 2), y: 1 },
+      { x: 1, y: Math.floor(this.ROOM_HEIGHT / 2) },
+      { x: this.ROOM_WIDTH - 2, y: Math.floor(this.ROOM_HEIGHT / 2) },
     ];
 
-    torchPositions.forEach((pos) => {
-      const torch = this.add.sprite(
+    candlePositions.forEach((pos) => {
+      const candle = this.add.sprite(
         pos.x * TILE_SIZE + TILE_SIZE / 2,
         pos.y * TILE_SIZE + TILE_SIZE / 2,
-        'torch'
+        'candle'
       );
-      torch.setDepth(5);
+      candle.setDepth(5);
 
       // Flickering animation
       this.tweens.add({
-        targets: torch,
-        alpha: { from: 1, to: 0.7 },
-        duration: 200,
+        targets: candle,
+        alpha: { from: 0.85, to: 1 },
+        scaleX: { from: 0.95, to: 1.05 },
+        duration: Phaser.Math.Between(150, 300),
         yoyo: true,
         repeat: -1,
         ease: 'Sine.easeInOut',
+        delay: Phaser.Math.Between(0, 500),
       });
     });
 
@@ -244,7 +249,7 @@ export class ShopScene extends Phaser.Scene {
     const titleText = this.add.text(
       (this.ROOM_WIDTH / 2) * TILE_SIZE,
       1.5 * TILE_SIZE,
-      "Wanderer's Rest",
+      'Wayside Shrine',
       {
         fontSize: '14px',
         color: '#fbbf24',
@@ -256,30 +261,31 @@ export class ShopScene extends Phaser.Scene {
   }
 
   private createInteractables(): void {
-    // Shopkeeper (top left area)
+    // Guardian Angel (top left area)
     const shopkeeperX = 4 * TILE_SIZE;
     const shopkeeperY = 3 * TILE_SIZE;
     this.shopkeeper = this.physics.add.sprite(shopkeeperX, shopkeeperY, 'shopkeeper');
     this.shopkeeper.setImmovable(true);
     this.shopkeeper.setDepth(5);
 
-    // Shopkeeper glow
+    // Angel glow (holy light)
     const shopkeeperGlow = this.add.sprite(shopkeeperX, shopkeeperY, 'weapon_drop_glow');
     shopkeeperGlow.setDepth(4);
-    shopkeeperGlow.setTint(0xfbbf24);
-    shopkeeperGlow.setAlpha(0.4);
+    shopkeeperGlow.setTint(0xffffff);
+    shopkeeperGlow.setAlpha(0.3);
     shopkeeperGlow.setScale(1.5);
     this.tweens.add({
       targets: shopkeeperGlow,
-      alpha: 0.7,
+      alpha: 0.5,
       scale: 1.8,
-      duration: 1000,
+      duration: 1500,
       yoyo: true,
       repeat: -1,
+      ease: 'Sine.easeInOut',
     });
 
-    // Shopkeeper label
-    this.add.text(shopkeeperX, shopkeeperY - 20, 'Shop', {
+    // Guardian label
+    this.add.text(shopkeeperX, shopkeeperY - 20, 'Guardian', {
       fontSize: '10px',
       color: '#fbbf24',
     }).setOrigin(0.5, 0.5).setDepth(10);
@@ -307,7 +313,7 @@ export class ShopScene extends Phaser.Scene {
     });
 
     // Fountain label
-    this.add.text(fountainX, fountainY - 20, 'Heal', {
+    this.add.text(fountainX, fountainY - 20, 'Holy Water', {
       fontSize: '10px',
       color: '#3b82f6',
     }).setOrigin(0.5, 0.5).setDepth(10);
@@ -345,7 +351,7 @@ export class ShopScene extends Phaser.Scene {
     });
 
     // Crystal label
-    this.add.text(crystalX, crystalY - 20, 'Reroll', {
+    this.add.text(crystalX, crystalY - 20, 'Prayer', {
       fontSize: '10px',
       color: '#8b5cf6',
     }).setOrigin(0.5, 0.5).setDepth(10);
@@ -381,7 +387,7 @@ export class ShopScene extends Phaser.Scene {
     });
 
     // Portal label
-    this.add.text(portalX, portalY - 20, 'Continue', {
+    this.add.text(portalX, portalY - 20, 'Ascend', {
       fontSize: '10px',
       color: '#10b981',
     }).setOrigin(0.5, 0.5).setDepth(10);
@@ -407,7 +413,7 @@ export class ShopScene extends Phaser.Scene {
     this.hpText.setDepth(100);
 
     // Floor display
-    const floorText = this.add.text(10, 46, `Floor ${this.floor} Complete`, {
+    const floorText = this.add.text(10, 46, `Stage ${this.floor} Complete`, {
       fontSize: '12px',
       color: '#9ca3af',
     });
@@ -465,7 +471,7 @@ export class ShopScene extends Phaser.Scene {
       }
     } else if (this.distance(playerPos, this.exitPortal) < threshold) {
       this.nearInteractable = 'portal';
-      this.showTooltip('[R] Continue to next floor');
+      this.showTooltip('[R] Continue to next stage');
     } else {
       this.hideTooltip();
     }
