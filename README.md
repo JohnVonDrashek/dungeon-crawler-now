@@ -115,4 +115,4 @@ MIT
 
 ---
 
-![Repobeats analytics](https://repobeats.axiom.co/api/embed/your-hash-here.svg "Repobeats analytics image")
+![Repobeats analytics](https://repobeats.axiom.co/api/embed/c351a20e10b1048d9bd99269b5b57664d1912a68.svg "Repobeats analytics image")
