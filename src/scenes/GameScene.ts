@@ -1,25 +1,24 @@
 import Phaser from 'phaser';
 import { Player } from '../entities/Player';
 import { Enemy } from '../entities/Enemy';
-import {
-  FastEnemy, TankEnemy, RangedEnemy, BossEnemy,
-  SlothEnemy, GluttonyEnemy, GreedEnemy, EnvyEnemy,
-  WrathEnemy, LustEnemy, PrideEnemy
-} from '../entities/enemies/EnemyTypes';
+import { BossEnemy } from '../entities/enemies/EnemyTypes';
 import { TILE_SIZE, DUNGEON_WIDTH, DUNGEON_HEIGHT } from '../utils/constants';
 import { DungeonGenerator, DungeonData, Room, RoomType } from '../systems/DungeonGenerator';
 import { CombatSystem } from '../systems/CombatSystem';
 import { LootSystem } from '../systems/LootSystem';
 import { AudioSystem } from '../systems/AudioSystem';
 import { SaveSystem } from '../systems/SaveSystem';
-import { Item, ItemType, RARITY_COLORS, ItemRarity, createItemFromWeapon } from '../systems/Item';
+import { ItemRarity } from '../systems/Item';
 import { InventoryUI } from '../ui/InventoryUI';
 import { MinimapUI } from '../ui/MinimapUI';
 import { LevelUpUI } from '../ui/LevelUpUI';
 import { RoomManager } from '../systems/RoomManager';
 import { HazardSystem } from '../systems/HazardSystem';
-import { Weapon, WeaponType } from '../systems/Weapon';
+import { Weapon } from '../systems/Weapon';
 import { LoreSystem, LoreEntry } from '../systems/LoreSystem';
+import { LootDropManager } from '../systems/LootDropManager';
+import { PlayerAttackManager } from '../systems/PlayerAttackManager';
+import { EnemySpawnManager } from '../systems/EnemySpawnManager';
 
 export class GameScene extends Phaser.Scene {
   private player!: Player;
@@ -27,13 +26,15 @@ export class GameScene extends Phaser.Scene {
   private dungeonGenerator!: DungeonGenerator;
   private wallLayer!: Phaser.GameObjects.Group;
   private floorLayer!: Phaser.GameObjects.Group;
-  private enemies!: Phaser.Physics.Arcade.Group;
-  private projectiles!: Phaser.Physics.Arcade.Group;
+  private enemySpawnManager!: EnemySpawnManager;
+  private playerAttackManager!: PlayerAttackManager;
   private enemyProjectiles!: Phaser.Physics.Arcade.Group;
-  private itemDrops!: Phaser.Physics.Arcade.Group;
-  private weaponDrops!: Phaser.Physics.Arcade.Group;
-  private goldDrops!: Phaser.Physics.Arcade.Group;
-  private healthBars: Map<Enemy, Phaser.GameObjects.Container> = new Map();
+  private lootDropManager!: LootDropManager;
+
+  // Convenience getter for enemies group
+  private get enemies(): Phaser.Physics.Arcade.Group {
+    return this.enemySpawnManager.getEnemiesGroup();
+  }
   private combatSystem!: CombatSystem;
   private lootSystem!: LootSystem;
   private audioSystem!: AudioSystem;
@@ -63,7 +64,6 @@ export class GameScene extends Phaser.Scene {
     this.canExit = true;
     this.isBossFloor = this.floor % 5 === 0;
     this.isFinalBoss = this.floor === this.FINAL_FLOOR;
-    this.healthBars = new Map();
 
     // Persist stats across floor transitions
     this.enemiesKilled = this.registry.get('enemiesKilled') || 0;
@@ -126,17 +126,22 @@ export class GameScene extends Phaser.Scene {
     );
 
     // Create projectile groups
-    this.projectiles = this.physics.add.group({ runChildUpdate: true });
+    this.playerAttackManager = new PlayerAttackManager(this, this.player, this.audioSystem);
+    this.playerAttackManager.create();
     this.enemyProjectiles = this.physics.add.group({ runChildUpdate: true });
-    this.itemDrops = this.physics.add.group();
-    this.weaponDrops = this.physics.add.group();
-    this.goldDrops = this.physics.add.group();
 
-    // Create enemies group (enemies spawn on room entry)
-    this.enemies = this.physics.add.group({ runChildUpdate: false });
+    // Create loot drop manager
+    this.lootDropManager = new LootDropManager(this, this.player, this.audioSystem);
+    this.lootDropManager.create();
 
     // Create room manager for door/room mechanics
     this.roomManager = new RoomManager(this, this.dungeon);
+
+    // Create enemy spawn manager (needs roomManager)
+    this.enemySpawnManager = new EnemySpawnManager(
+      this, this.player, this.roomManager, this.audioSystem, this.enemyProjectiles, this.floor
+    );
+    this.enemySpawnManager.create();
 
     // Create hazard system
     this.hazardSystem = new HazardSystem(this, this.player, this.floor);
@@ -148,7 +153,6 @@ export class GameScene extends Phaser.Scene {
     this.createExit();
     this.setupCollisions();
     this.setupEventHandlers();
-    this.setupPlayerAttack();
     this.setupKeyboardControls();
 
     // Load saved player data if on floor 1 and save exists
@@ -159,6 +163,9 @@ export class GameScene extends Phaser.Scene {
     this.levelUpUI = new LevelUpUI(this, this.player);
     this.createHUD();
     this.createLorePrompt();
+
+    // Setup player attack after UI is created (needs UI visibility check)
+    this.playerAttackManager.setupPlayerAttack(this.inventoryUI, this.levelUpUI);
 
     // Boss floor announcement
     if (this.isBossFloor) {
@@ -177,7 +184,8 @@ export class GameScene extends Phaser.Scene {
     // Check for room entry (returns room if entering a new unvisited room)
     const enteredRoom = this.roomManager.update(this.player.x, this.player.y);
     if (enteredRoom) {
-      this.spawnEnemiesInRoom(enteredRoom);
+      const exitRoom = this.dungeon.rooms[this.dungeon.rooms.length - 1];
+      this.enemySpawnManager.spawnEnemiesInRoom(enteredRoom, this.isBossFloor, exitRoom);
       this.hazardSystem.spawnHazardsInRoom(enteredRoom, this.dungeon);
     }
 
@@ -185,7 +193,7 @@ export class GameScene extends Phaser.Scene {
       const enemy = child as unknown as Enemy;
       if (enemy.active) {
         enemy.update(time, delta);
-        this.updateHealthBar(enemy);
+        this.enemySpawnManager.updateHealthBar(enemy);
       }
     });
 
@@ -345,17 +353,17 @@ export class GameScene extends Phaser.Scene {
 
     // Spawn multiple items with offset
     const treasureLoot = this.lootSystem.generateGuaranteedLoot(ItemRarity.RARE);
-    this.spawnItemDrop(lootX - 15, lootY, treasureLoot);
+    this.lootDropManager.spawnItemDrop(lootX - 15, lootY, treasureLoot);
 
     // Chance for second item
     if (Math.random() < 0.5) {
       const bonusLoot = this.lootSystem.generateGuaranteedLoot(ItemRarity.UNCOMMON);
-      this.spawnItemDrop(lootX + 15, lootY, bonusLoot);
+      this.lootDropManager.spawnItemDrop(lootX + 15, lootY, bonusLoot);
     }
 
     // Guaranteed weapon from treasure chests
     const weapon = Weapon.createRandom(this.floor + 3);
-    this.spawnWeaponDrop(lootX, lootY - 20, weapon);
+    this.lootDropManager.spawnWeaponDrop(lootX, lootY - 20, weapon);
   }
 
   private addHealingShrine(room: Room): void {
@@ -872,251 +880,6 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private spawnEnemiesInRoom(room: Room): void {
-    const exitRoom = this.dungeon.rooms[this.dungeon.rooms.length - 1];
-    const isBossRoom = this.isBossFloor && room.id === exitRoom.id;
-    const isChallengeRoom = room.type === RoomType.CHALLENGE;
-
-    // Calculate enemy count based on floor and room size (or 1 for boss)
-    let enemyCount: number;
-    if (isBossRoom) {
-      enemyCount = 1;
-    } else if (isChallengeRoom) {
-      // Challenge rooms have more enemies
-      const roomArea = room.width * room.height;
-      const baseCount = Math.max(2, Math.floor(roomArea / 100));
-      enemyCount = Math.min(baseCount + Math.floor(this.floor / 2), 8);
-    } else {
-      const roomArea = room.width * room.height;
-      const baseCount = Math.max(1, Math.floor(roomArea / 150));
-      enemyCount = Math.min(baseCount + Math.floor(this.floor / 3), 6);
-    }
-
-    // Generate spawn positions
-    const spawnPositions: { x: number; y: number }[] = [];
-    for (let i = 0; i < enemyCount; i++) {
-      const x = (room.x + 2 + Math.floor(Math.random() * (room.width - 4))) * TILE_SIZE + TILE_SIZE / 2;
-      const y = (room.y + 2 + Math.floor(Math.random() * (room.height - 4))) * TILE_SIZE + TILE_SIZE / 2;
-      spawnPositions.push({ x, y });
-    }
-
-    // Activate the room immediately (closes doors)
-    this.roomManager.activateRoom(room.id, enemyCount);
-    this.audioSystem.play('sfx_hit', 0.3); // Door slam sound
-    this.audioSystem.setMusicStyle('combat'); // Switch to combat music
-    this.shakeCamera(isBossRoom ? 8 : 3, isBossRoom ? 300 : 150);
-
-    // Show spawn indicators
-    const indicators: Phaser.GameObjects.Graphics[] = [];
-    const indicatorSize = isBossRoom ? TILE_SIZE * 1.5 : isChallengeRoom ? TILE_SIZE * 1.0 : TILE_SIZE * 0.8;
-    const indicatorColor = isBossRoom ? 0xfbbf24 : isChallengeRoom ? 0xaa00ff : 0xff4444;
-
-    for (const pos of spawnPositions) {
-      const indicator = this.add.graphics();
-      indicator.setDepth(10);
-      indicators.push(indicator);
-
-      // Pulsing warning circle
-      let pulseProgress = 0;
-      const pulseTimer = this.time.addEvent({
-        delay: 50,
-        callback: () => {
-          pulseProgress += 0.1;
-          indicator.clear();
-
-          // Outer warning ring
-          const alpha = 0.3 + Math.sin(pulseProgress * 8) * 0.2;
-          indicator.lineStyle(isBossRoom ? 3 : 2, indicatorColor, alpha);
-          indicator.strokeCircle(pos.x, pos.y, indicatorSize);
-
-          // Inner fill
-          indicator.fillStyle(indicatorColor, 0.15 + Math.sin(pulseProgress * 8) * 0.1);
-          indicator.fillCircle(pos.x, pos.y, indicatorSize * 0.75);
-        },
-        repeat: -1,
-      });
-
-      // Store timer for cleanup
-      indicator.setData('pulseTimer', pulseTimer);
-    }
-
-    // Spawn enemies after delay (longer for boss)
-    const spawnDelay = isBossRoom ? 2000 : 1200;
-    this.time.delayedCall(spawnDelay, () => {
-      // Clean up indicators
-      for (const indicator of indicators) {
-        const timer = indicator.getData('pulseTimer') as Phaser.Time.TimerEvent;
-        if (timer) timer.destroy();
-        indicator.destroy();
-      }
-
-      // Spawn enemies at the positions
-      for (const pos of spawnPositions) {
-        let enemy: Enemy;
-        if (isBossRoom) {
-          const boss = new BossEnemy(this, pos.x, pos.y, this.floor);
-          boss.setProjectileGroup(this.enemyProjectiles);
-          enemy = boss;
-        } else if (isChallengeRoom) {
-          // Challenge rooms spawn tougher enemy variants
-          enemy = this.createChallengeEnemy(pos.x, pos.y);
-        } else {
-          enemy = this.createEnemy(pos.x, pos.y);
-        }
-        enemy.setTarget(this.player);
-        this.enemies.add(enemy as unknown as Phaser.GameObjects.GameObject);
-        this.createHealthBar(enemy);
-
-        // Mark challenge room enemies for better rewards
-        if (isChallengeRoom) {
-          enemy.setData('challengeEnemy', true);
-        }
-
-        // Spawn pop effect
-        enemy.setScale(0);
-        this.tweens.add({
-          targets: enemy,
-          scale: 1,
-          duration: isBossRoom ? 400 : 200,
-          ease: 'Back.easeOut',
-        });
-      }
-
-      this.audioSystem.play('sfx_enemy_death', 0.3); // Spawn sound
-
-      if (isBossRoom) {
-        this.shakeCamera(10, 200);
-      }
-    });
-  }
-
-  private createEnemy(x: number, y: number): Enemy {
-    const roll = Math.random();
-    const sinRoll = Math.random();
-
-    // Sin enemies based on floor progression
-    // Each sin has its own probability window
-    // Pride: Floor 10+ (5% chance - rare and powerful)
-    if (this.floor >= 10 && sinRoll < 0.05) {
-      return new PrideEnemy(this, x, y, this.floor);
-    }
-    // Wrath: Floor 7+ (8% chance)
-    if (this.floor >= 7 && sinRoll >= 0.05 && sinRoll < 0.13) {
-      return new WrathEnemy(this, x, y, this.floor);
-    }
-    // Lust: Floor 7+ (8% chance)
-    if (this.floor >= 7 && sinRoll >= 0.13 && sinRoll < 0.21) {
-      return new LustEnemy(this, x, y, this.floor);
-    }
-    // Greed: Floor 4+ (8% chance)
-    if (this.floor >= 4 && sinRoll >= 0.21 && sinRoll < 0.29) {
-      return new GreedEnemy(this, x, y, this.floor);
-    }
-    // Envy: Floor 4+ (8% chance)
-    if (this.floor >= 4 && sinRoll >= 0.29 && sinRoll < 0.37) {
-      return new EnvyEnemy(this, x, y, this.floor);
-    }
-    // Sloth: Floor 1+ (8% chance - intro sin)
-    if (sinRoll >= 0.37 && sinRoll < 0.45) {
-      return new SlothEnemy(this, x, y, this.floor);
-    }
-    // Gluttony: Floor 1+ (8% chance - intro sin)
-    if (sinRoll >= 0.45 && sinRoll < 0.53) {
-      return new GluttonyEnemy(this, x, y, this.floor);
-    }
-
-    // Standard enemies
-    const hasRanged = this.floor >= 2;
-    const hasTank = this.floor >= 3;
-
-    if (hasTank && roll < 0.15) {
-      return new TankEnemy(this, x, y, this.floor);
-    } else if (hasRanged && roll < 0.35) {
-      const ranged = new RangedEnemy(this, x, y, this.floor);
-      ranged.setProjectileGroup(this.enemyProjectiles);
-      return ranged;
-    } else if (roll < 0.55) {
-      return new FastEnemy(this, x, y, this.floor);
-    } else {
-      return new Enemy(this, x, y, 'enemy', {
-        hp: 20 + this.floor * 5,
-        attack: 5 + this.floor * 2,
-        defense: 1 + Math.floor(this.floor / 2),
-        speed: 60 + this.floor * 5,
-        xpValue: 20 + this.floor * 5,
-      });
-    }
-  }
-
-  private createChallengeEnemy(x: number, y: number): Enemy {
-    // Challenge rooms spawn tougher enemy variants with higher chance of elites
-    const roll = Math.random();
-    const effectiveFloor = this.floor + 2; // Enemies are tougher as if from later floor
-
-    if (roll < 0.3) {
-      // 30% chance for tank in challenge rooms
-      return new TankEnemy(this, x, y, effectiveFloor);
-    } else if (roll < 0.55) {
-      // 25% chance for ranged
-      const ranged = new RangedEnemy(this, x, y, effectiveFloor);
-      ranged.setProjectileGroup(this.enemyProjectiles);
-      return ranged;
-    } else if (roll < 0.75) {
-      // 20% chance for fast
-      return new FastEnemy(this, x, y, effectiveFloor);
-    } else {
-      // 25% chance for elite basic enemy (buffed stats)
-      return new Enemy(this, x, y, 'enemy', {
-        hp: 30 + effectiveFloor * 6,
-        attack: 7 + effectiveFloor * 2,
-        defense: 2 + Math.floor(effectiveFloor / 2),
-        speed: 70 + effectiveFloor * 5,
-        xpValue: 35 + effectiveFloor * 5, // More XP for challenge enemies
-      });
-    }
-  }
-
-  private createHealthBar(enemy: Enemy): void {
-    const container = this.add.container(enemy.x, enemy.y - 15);
-    container.setDepth(50);
-
-    const bgWidth = enemy instanceof BossEnemy ? 40 : 20;
-    const bg = this.add.rectangle(0, 0, bgWidth, 4, 0x333333);
-    const bar = this.add.rectangle(-bgWidth / 2, 0, bgWidth, 4, 0x22cc22);
-    bar.setOrigin(0, 0.5);
-    bar.setName('bar');
-
-    container.add([bg, bar]);
-    this.healthBars.set(enemy, container);
-  }
-
-  private updateHealthBar(enemy: Enemy): void {
-    const container = this.healthBars.get(enemy);
-    if (!container) return;
-
-    container.setPosition(enemy.x, enemy.y - 15);
-
-    const bar = container.getByName('bar') as Phaser.GameObjects.Rectangle;
-    if (bar) {
-      const percent = enemy.hp / enemy.maxHp;
-      const maxWidth = enemy instanceof BossEnemy ? 40 : 20;
-      bar.width = maxWidth * Math.max(0, percent);
-
-      // Color based on health
-      if (percent > 0.5) bar.setFillStyle(0x22cc22);
-      else if (percent > 0.25) bar.setFillStyle(0xcccc22);
-      else bar.setFillStyle(0xcc2222);
-    }
-  }
-
-  private removeHealthBar(enemy: Enemy): void {
-    const container = this.healthBars.get(enemy);
-    if (container) {
-      container.destroy();
-      this.healthBars.delete(enemy);
-    }
-  }
-
   private exit!: Phaser.Physics.Arcade.Sprite;
 
   private createExit(): void {
@@ -1141,15 +904,17 @@ export class GameScene extends Phaser.Scene {
       undefined, this
     );
 
+    // Player projectile collisions
+    const projectileGroup = this.playerAttackManager.getProjectileGroup();
     this.physics.add.overlap(
-      this.projectiles, this.enemies,
-      this.handleProjectileEnemyCollision as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
+      projectileGroup, this.enemies,
+      this.playerAttackManager.handleProjectileEnemyCollision.bind(this.playerAttackManager) as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
       undefined, this
     );
 
     this.physics.add.collider(
-      this.projectiles, this.wallLayer,
-      this.handleProjectileWallCollision as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
+      projectileGroup, this.wallLayer,
+      this.playerAttackManager.handleProjectileWallCollision.bind(this.playerAttackManager) as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
       undefined, this
     );
 
@@ -1174,21 +939,23 @@ export class GameScene extends Phaser.Scene {
 
     // Lore objects - handled via Q key interaction, not automatic overlap
 
+    // Loot pickups
+    const lootGroups = this.lootDropManager.getGroups();
     this.physics.add.overlap(
-      this.player, this.itemDrops,
-      this.handleItemPickup as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
+      this.player, lootGroups.items,
+      this.lootDropManager.handleItemPickup.bind(this.lootDropManager) as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
       undefined, this
     );
 
     this.physics.add.overlap(
-      this.player, this.weaponDrops,
-      this.handleWeaponPickup as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
+      this.player, lootGroups.weapons,
+      this.lootDropManager.handleWeaponPickup.bind(this.lootDropManager) as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
       undefined, this
     );
 
     this.physics.add.overlap(
-      this.player, this.goldDrops,
-      this.handleGoldPickup as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
+      this.player, lootGroups.gold,
+      this.lootDropManager.handleGoldPickup.bind(this.lootDropManager) as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
       undefined, this
     );
 
@@ -1220,38 +987,6 @@ export class GameScene extends Phaser.Scene {
     this.showDamageNumber(player.x, player.y, result.damage, true);
   }
 
-  private handleProjectileEnemyCollision(
-    projectileObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject,
-    enemyObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject
-  ): void {
-    const projectile = projectileObj as Phaser.Physics.Arcade.Sprite;
-    const enemy = enemyObj as unknown as Enemy;
-
-    // Check if this projectile already hit this enemy (for piercing)
-    const hitEnemies: Set<Enemy> = projectile.getData('hitEnemies') || new Set();
-    if (hitEnemies.has(enemy)) return;
-    hitEnemies.add(enemy);
-    projectile.setData('hitEnemies', hitEnemies);
-
-    // Use projectile's stored damage
-    const damage = projectile.getData('damage') || this.player.getAttackDamage();
-    enemy.takeDamage(damage);
-    this.audioSystem.play('sfx_hit', 0.3);
-    this.showDamageNumber(enemy.x, enemy.y, damage, false);
-
-    // Handle AoE explosion
-    const isAoe = projectile.getData('aoe');
-    if (isAoe) {
-      this.createExplosionFromProjectile(projectile.x, projectile.y, projectile);
-    }
-
-    // Handle piercing - don't destroy if piercing
-    const isPiercing = projectile.getData('piercing');
-    if (!isPiercing) {
-      projectile.destroy();
-    }
-  }
-
   private handleEnemyProjectilePlayerCollision(
     playerObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject,
     projectileObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject
@@ -1276,13 +1011,6 @@ export class GameScene extends Phaser.Scene {
     projectileObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject
   ): void {
     const projectile = projectileObj as Phaser.Physics.Arcade.Sprite;
-
-    // Handle AoE explosion on wall hit
-    const isAoe = projectile.getData('aoe');
-    if (isAoe) {
-      this.createExplosionFromProjectile(projectile.x, projectile.y, projectile);
-    }
-
     projectile.destroy();
   }
 
@@ -1329,289 +1057,6 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private handleItemPickup(
-    _playerObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject,
-    itemObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject
-  ): void {
-    const itemSprite = itemObj as Phaser.Physics.Arcade.Sprite;
-    const item = itemSprite.getData('item') as Item;
-    const glow = itemSprite.getData('glow') as Phaser.GameObjects.Sprite;
-
-    if (item && this.player.pickupItem(item)) {
-      this.showPickupText(itemSprite.x, itemSprite.y, item);
-      this.audioSystem.play('sfx_pickup', 0.4);
-      this.itemsCollected++;
-      this.registry.set('itemsCollected', this.itemsCollected);
-      if (glow) glow.destroy();
-      itemSprite.destroy();
-    }
-  }
-
-  private showPickupText(x: number, y: number, item: Item): void {
-    const color = '#' + RARITY_COLORS[item.rarity].toString(16).padStart(6, '0');
-    const text = this.add.text(x, y - 10, `+ ${item.name}`, {
-      fontSize: '10px',
-      color: color,
-      fontStyle: 'bold',
-    });
-    text.setOrigin(0.5);
-    text.setDepth(100);
-
-    this.tweens.add({
-      targets: text,
-      y: y - 30,
-      alpha: 0,
-      duration: 1000,
-      onComplete: () => text.destroy(),
-    });
-  }
-
-  private getItemDropTexture(item: Item): string {
-    // Use specific texture based on item type
-    switch (item.type) {
-      case ItemType.ARMOR:
-        return 'item_armor';
-      case ItemType.ACCESSORY:
-        return 'item_accessory';
-      case ItemType.CONSUMABLE:
-        return 'item_consumable';
-      case ItemType.WEAPON:
-        // Weapons with weaponData use their weapon texture
-        if (item.weaponData) {
-          const weaponTextures: Record<string, string> = {
-            wand: 'weapon_wand',
-            sword: 'weapon_sword',
-            bow: 'weapon_bow',
-            staff: 'weapon_staff',
-            daggers: 'weapon_daggers',
-          };
-          return weaponTextures[item.weaponData.weaponType] || 'weapon_wand';
-        }
-        return 'weapon_sword';
-      default:
-        return 'item_drop';
-    }
-  }
-
-  private spawnItemDrop(x: number, y: number, item: Item): void {
-    const texture = this.getItemDropTexture(item);
-    const drop = this.itemDrops.create(x, y, texture) as Phaser.Physics.Arcade.Sprite;
-    drop.setData('item', item);
-    drop.setDepth(5);
-    drop.setTint(RARITY_COLORS[item.rarity]);
-
-    // Add glow effect behind the item
-    const glow = this.add.sprite(x, y, 'weapon_drop_glow');
-    glow.setDepth(4);
-    glow.setTint(RARITY_COLORS[item.rarity]);
-    glow.setAlpha(0.4);
-    drop.setData('glow', glow);
-
-    // Floating animation
-    this.tweens.add({
-      targets: [drop, glow],
-      y: y - 5,
-      duration: 500,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut',
-    });
-
-    // Glow pulse
-    this.tweens.add({
-      targets: glow,
-      alpha: 0.7,
-      scale: 1.3,
-      duration: 600,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut',
-    });
-
-    // Pop-in animation
-    drop.setScale(0);
-    glow.setScale(0);
-    this.tweens.add({
-      targets: [drop, glow],
-      scale: 1,
-      duration: 200,
-      ease: 'Back.easeOut',
-    });
-  }
-
-  private spawnWeaponDrop(x: number, y: number, weapon: Weapon): void {
-    const drop = this.weaponDrops.create(x, y, weapon.stats.texture) as Phaser.Physics.Arcade.Sprite;
-    drop.setData('weapon', weapon);
-    drop.setDepth(5);
-
-    // Rarity-based tint
-    const rarityColors = [0xffffff, 0x00ff00, 0x0088ff, 0xaa00ff, 0xffaa00];
-    drop.setTint(rarityColors[weapon.rarity]);
-
-    // Add glow effect
-    const glow = this.add.sprite(x, y, 'weapon_drop_glow');
-    glow.setDepth(4);
-    glow.setTint(rarityColors[weapon.rarity]);
-    glow.setAlpha(0.5);
-    drop.setData('glow', glow);
-
-    // Floating animation
-    this.tweens.add({
-      targets: [drop, glow],
-      y: y - 6,
-      duration: 600,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut',
-    });
-
-    // Glow pulse
-    this.tweens.add({
-      targets: glow,
-      alpha: 0.8,
-      scale: 1.2,
-      duration: 800,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut',
-    });
-
-    // Pop-in animation
-    drop.setScale(0);
-    glow.setScale(0);
-    this.tweens.add({
-      targets: [drop, glow],
-      scale: 1,
-      duration: 250,
-      ease: 'Back.easeOut',
-    });
-  }
-
-  private spawnGoldDrop(x: number, y: number, amount: number): void {
-    // Spawn multiple coins for larger amounts
-    const coinCount = Math.min(Math.ceil(amount / 10), 5);
-    const totalAmount = amount;
-
-    for (let i = 0; i < coinCount; i++) {
-      const offsetX = (Math.random() - 0.5) * 20;
-      const offsetY = (Math.random() - 0.5) * 20;
-      const coinX = x + offsetX;
-      const coinY = y + offsetY;
-
-      const coin = this.goldDrops.create(coinX, coinY, 'gold_coin') as Phaser.Physics.Arcade.Sprite;
-      coin.setData('amount', Math.ceil(totalAmount / coinCount));
-      coin.setDepth(5);
-
-      // Pop-out animation
-      coin.setScale(0);
-      const delay = i * 50;
-      this.time.delayedCall(delay, () => {
-        this.tweens.add({
-          targets: coin,
-          scale: 1,
-          y: coinY - 10,
-          duration: 200,
-          ease: 'Back.easeOut',
-        });
-
-        // Floating animation after pop
-        this.time.delayedCall(200, () => {
-          this.tweens.add({
-            targets: coin,
-            y: coinY - 14,
-            duration: 400,
-            yoyo: true,
-            repeat: -1,
-            ease: 'Sine.easeInOut',
-          });
-        });
-      });
-    }
-  }
-
-  private handleGoldPickup(
-    _playerObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject,
-    goldObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject
-  ): void {
-    const coin = goldObj as Phaser.Physics.Arcade.Sprite;
-
-    // Immediately disable physics to prevent re-triggering
-    if (coin.body) {
-      coin.body.enable = false;
-    }
-    this.goldDrops.remove(coin, false, false);
-
-    const amount = coin.getData('amount') as number;
-
-    this.player.addGold(amount);
-    this.audioSystem.play('sfx_pickup', 0.3);
-
-    // Collect animation - fly to HUD
-    this.tweens.killTweensOf(coin);
-    this.tweens.add({
-      targets: coin,
-      x: this.cameras.main.scrollX + 10,
-      y: this.cameras.main.scrollY + 80,
-      alpha: 0,
-      scale: 0.5,
-      duration: 300,
-      ease: 'Quad.easeIn',
-      onComplete: () => coin.destroy(),
-    });
-
-    this.updateHUD();
-  }
-
-  private handleWeaponPickup(
-    _playerObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject,
-    weaponObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject
-  ): void {
-    const weaponSprite = weaponObj as Phaser.Physics.Arcade.Sprite;
-    const weapon = weaponSprite.getData('weapon') as Weapon;
-    const glow = weaponSprite.getData('glow') as Phaser.GameObjects.Sprite;
-
-    if (weapon) {
-      // Convert weapon to item and add to inventory
-      const weaponItem = createItemFromWeapon(weapon);
-      if (this.player.pickupItem(weaponItem)) {
-        this.showWeaponPickupText(weaponSprite.x, weaponSprite.y, weapon);
-        this.audioSystem.play('sfx_pickup', 0.5);
-        this.itemsCollected++;
-        this.registry.set('itemsCollected', this.itemsCollected);
-
-        if (glow) glow.destroy();
-        weaponSprite.destroy();
-      } else {
-        // Inventory full - show message
-        this.showGameMessage('Inventory full!');
-      }
-    }
-  }
-
-  private showWeaponPickupText(x: number, y: number, weapon: Weapon): void {
-    const rarityColors = ['#ffffff', '#00ff00', '#0088ff', '#aa00ff', '#ffaa00'];
-    const color = rarityColors[weapon.rarity];
-
-    const text = this.add.text(x, y - 10, `Equipped: ${weapon.getDisplayName()}`, {
-      fontSize: '11px',
-      color: color,
-      fontStyle: 'bold',
-      stroke: '#000000',
-      strokeThickness: 2,
-    });
-    text.setOrigin(0.5, 1);
-    text.setDepth(100);
-
-    this.tweens.add({
-      targets: text,
-      y: y - 40,
-      alpha: 0,
-      duration: 1500,
-      ease: 'Cubic.easeOut',
-      onComplete: () => text.destroy(),
-    });
-  }
-
   private showBossAnnouncement(): void {
     const isFinal = this.floor === this.FINAL_FLOOR;
     const message = isFinal ? 'FLOOR 20\nFINAL BOSS' : `FLOOR ${this.floor}\nBOSS BATTLE`;
@@ -1644,6 +1089,19 @@ export class GameScene extends Phaser.Scene {
   }
 
   private setupEventHandlers(): void {
+    // Events from PlayerAttackManager
+    this.events.on('showDamageNumber', (x: number, y: number, damage: number, isPlayer: boolean) => {
+      this.showDamageNumber(x, y, damage, isPlayer);
+    });
+
+    this.events.on('shakeCamera', (intensity: number, duration: number) => {
+      this.shakeCamera(intensity, duration);
+    });
+
+    this.events.on('requestEnemiesGroup', (callback: (enemies: Phaser.Physics.Arcade.Group) => void) => {
+      callback(this.enemies);
+    });
+
     this.events.on('playerDeath', () => {
       this.handlePlayerDeath();
     });
@@ -1651,7 +1109,7 @@ export class GameScene extends Phaser.Scene {
     this.events.on('enemyDeath', (enemy: Enemy) => {
       this.player.gainXP(enemy.xpValue);
       this.audioSystem.play('sfx_enemy_death', 0.4);
-      this.removeHealthBar(enemy);
+      this.enemySpawnManager.removeHealthBar(enemy);
       this.spawnDeathParticles(enemy.x, enemy.y);
       this.enemiesKilled++;
       this.registry.set('enemiesKilled', this.enemiesKilled);
@@ -1671,15 +1129,15 @@ export class GameScene extends Phaser.Scene {
       // Boss drops guaranteed rare+ loot and a weapon
       if (enemy instanceof BossEnemy) {
         const loot = this.lootSystem.generateGuaranteedLoot(ItemRarity.RARE);
-        this.spawnItemDrop(enemy.x, enemy.y, loot);
+        this.lootDropManager.spawnItemDrop(enemy.x, enemy.y, loot);
 
         // Guaranteed weapon from bosses with higher rarity
         const weapon = Weapon.createRandom(this.floor + 5);
-        this.spawnWeaponDrop(enemy.x + 24, enemy.y, weapon);
+        this.lootDropManager.spawnWeaponDrop(enemy.x + 24, enemy.y, weapon);
 
         // Bosses drop lots of gold
         const bossGold = 50 + this.floor * 20;
-        this.spawnGoldDrop(enemy.x - 24, enemy.y, bossGold);
+        this.lootDropManager.spawnGoldDrop(enemy.x - 24, enemy.y, bossGold);
 
         // Check for victory on final boss
         if (this.isFinalBoss) {
@@ -1696,20 +1154,20 @@ export class GameScene extends Phaser.Scene {
         // Regular enemies: chance for item
         const loot = this.lootSystem.generateLoot(this.floor + (isChallengeEnemy ? 2 : 0));
         if (loot && Math.random() < dropChance / 0.4) { // Adjust for loot system's internal chance
-          this.spawnItemDrop(enemy.x, enemy.y, loot);
+          this.lootDropManager.spawnItemDrop(enemy.x, enemy.y, loot);
         }
 
         // Weapon drop chance
         if (Math.random() < weaponChance) {
           const weapon = Weapon.createRandom(this.floor + (isChallengeEnemy ? 2 : 0));
-          this.spawnWeaponDrop(enemy.x, enemy.y, weapon);
+          this.lootDropManager.spawnWeaponDrop(enemy.x, enemy.y, weapon);
         }
 
         // Gold drops - all enemies drop some gold
         const baseGold = 5 + this.floor * 2;
         const goldAmount = baseGold + Math.floor(Math.random() * baseGold);
         const goldMultiplier = isChallengeEnemy ? 2 : 1;
-        this.spawnGoldDrop(enemy.x, enemy.y, goldAmount * goldMultiplier);
+        this.lootDropManager.spawnGoldDrop(enemy.x, enemy.y, goldAmount * goldMultiplier);
       }
     });
 
@@ -1732,8 +1190,18 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    this.events.on('itemPickup', () => {
-      // Already handled in handleItemPickup
+    // Loot collection events from LootDropManager
+    this.events.on('itemCollected', () => {
+      this.itemsCollected++;
+      this.registry.set('itemsCollected', this.itemsCollected);
+    });
+
+    this.events.on('goldCollected', () => {
+      this.updateHUD();
+    });
+
+    this.events.on('inventoryFull', () => {
+      this.showGameMessage('Inventory full!');
     });
 
     // Listen for level up
@@ -1768,16 +1236,6 @@ export class GameScene extends Phaser.Scene {
     // Greed's gold stealing - show notification
     this.events.on('goldStolen', (amount: number) => {
       this.showFloatingText(this.player.x, this.player.y - 30, `-${amount} gold!`, '#ffd700');
-    });
-  }
-
-  private setupPlayerAttack(): void {
-    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (this.inventoryUI.getIsVisible() || this.levelUpUI.getIsVisible()) return;
-
-      if (pointer.leftButtonDown()) {
-        this.playerAttack(pointer);
-      }
     });
   }
 
@@ -1864,7 +1322,7 @@ export class GameScene extends Phaser.Scene {
     // F5: Spawn epic loot
     this.input.keyboard.on('keydown-F5', () => {
       const loot = this.lootSystem.generateGuaranteedLoot(ItemRarity.EPIC);
-      this.spawnItemDrop(this.player.x + 30, this.player.y, loot);
+      this.lootDropManager.spawnItemDrop(this.player.x + 30, this.player.y, loot);
       this.showDevMessage('Spawned Epic Loot');
     });
 
@@ -2036,267 +1494,6 @@ export class GameScene extends Phaser.Scene {
       delay: 500,
       onComplete: () => text.destroy(),
     });
-  }
-
-  private playerAttack(pointer: Phaser.Input.Pointer): void {
-    if (!this.player.canAttack()) return;
-
-    const weapon = this.player.getWeapon();
-    const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
-    const angle = Phaser.Math.Angle.Between(
-      this.player.x, this.player.y,
-      worldPoint.x, worldPoint.y
-    );
-
-    this.player.startAttackCooldown();
-
-    switch (weapon.stats.type) {
-      case WeaponType.SWORD:
-        this.performMeleeAttack(angle, weapon);
-        break;
-      case WeaponType.BOW:
-        this.performBowAttack(angle, weapon);
-        break;
-      case WeaponType.STAFF:
-        this.performStaffAttack(angle, weapon);
-        break;
-      case WeaponType.DAGGERS:
-        this.performDaggerAttack(angle, weapon);
-        break;
-      case WeaponType.WAND:
-      default:
-        this.performWandAttack(angle, weapon);
-        break;
-    }
-
-    this.audioSystem.play('sfx_attack', 0.3);
-  }
-
-  private performWandAttack(angle: number, weapon: Weapon): void {
-    const projectile = this.projectiles.create(
-      this.player.x, this.player.y, weapon.stats.projectileTexture
-    ) as Phaser.Physics.Arcade.Sprite;
-
-    projectile.setDepth(8);
-    projectile.setData('damage', this.player.getAttackDamage());
-    projectile.setData('piercing', weapon.stats.piercing);
-    projectile.setRotation(angle);
-    projectile.setVelocity(
-      Math.cos(angle) * weapon.stats.projectileSpeed,
-      Math.sin(angle) * weapon.stats.projectileSpeed
-    );
-
-    this.time.delayedCall(2000 * weapon.stats.range, () => {
-      if (projectile.active) projectile.destroy();
-    });
-  }
-
-  private performSwordAttack(angle: number, weapon: Weapon): void {
-    // Create slash effect
-    const slash = this.add.sprite(
-      this.player.x + Math.cos(angle) * 20,
-      this.player.y + Math.sin(angle) * 20,
-      weapon.stats.projectileTexture
-    );
-    slash.setDepth(15);
-    slash.setRotation(angle);
-    slash.setScale(weapon.stats.range);
-
-    // Fade out the slash
-    this.tweens.add({
-      targets: slash,
-      alpha: 0,
-      scale: weapon.stats.range * 1.3,
-      duration: 150,
-      onComplete: () => slash.destroy(),
-    });
-
-    // Check for enemies in the arc
-    const slashRange = TILE_SIZE * 2 * weapon.stats.range;
-    const slashArc = Phaser.Math.DegToRad(weapon.stats.spread);
-
-    this.enemies.getChildren().forEach((child) => {
-      const enemy = child as unknown as Enemy;
-      if (!enemy.active) return;
-
-      const dist = Phaser.Math.Distance.Between(
-        this.player.x, this.player.y,
-        enemy.x, enemy.y
-      );
-
-      if (dist <= slashRange) {
-        const enemyAngle = Phaser.Math.Angle.Between(
-          this.player.x, this.player.y,
-          enemy.x, enemy.y
-        );
-
-        let angleDiff = Math.abs(angle - enemyAngle);
-        if (angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
-
-        if (angleDiff <= slashArc / 2) {
-          // Hit the enemy
-          const damage = this.player.getAttackDamage();
-          enemy.takeDamage(damage);
-          this.showDamageNumber(enemy.x, enemy.y, damage, false);
-
-          // Knockback
-          const knockbackForce = 150;
-          enemy.setVelocity(
-            Math.cos(enemyAngle) * knockbackForce,
-            Math.sin(enemyAngle) * knockbackForce
-          );
-        }
-      }
-    });
-  }
-
-  private performMeleeAttack(angle: number, weapon: Weapon): void {
-    this.performSwordAttack(angle, weapon);
-  }
-
-  private performBowAttack(angle: number, weapon: Weapon): void {
-    const projectile = this.projectiles.create(
-      this.player.x, this.player.y, weapon.stats.projectileTexture
-    ) as Phaser.Physics.Arcade.Sprite;
-
-    projectile.setDepth(8);
-    projectile.setData('damage', this.player.getAttackDamage());
-    projectile.setData('piercing', true);
-    projectile.setRotation(angle);
-    projectile.setVelocity(
-      Math.cos(angle) * weapon.stats.projectileSpeed,
-      Math.sin(angle) * weapon.stats.projectileSpeed
-    );
-
-    this.time.delayedCall(2500 * weapon.stats.range, () => {
-      if (projectile.active) projectile.destroy();
-    });
-  }
-
-  private performStaffAttack(angle: number, weapon: Weapon): void {
-    const projectile = this.projectiles.create(
-      this.player.x, this.player.y, weapon.stats.projectileTexture
-    ) as Phaser.Physics.Arcade.Sprite;
-
-    projectile.setDepth(8);
-    projectile.setData('damage', this.player.getAttackDamage());
-    projectile.setData('aoe', true);
-    projectile.setData('aoeRadius', weapon.stats.aoeRadius);
-    projectile.setRotation(angle);
-    projectile.setVelocity(
-      Math.cos(angle) * weapon.stats.projectileSpeed,
-      Math.sin(angle) * weapon.stats.projectileSpeed
-    );
-
-    // Add a slight bobbing animation
-    this.tweens.add({
-      targets: projectile,
-      scaleX: 1.2,
-      scaleY: 1.2,
-      duration: 200,
-      yoyo: true,
-      repeat: -1,
-    });
-
-    this.time.delayedCall(2000 * weapon.stats.range, () => {
-      if (projectile.active) {
-        this.createExplosion(projectile.x, projectile.y, weapon);
-        projectile.destroy();
-      }
-    });
-  }
-
-  private performDaggerAttack(angle: number, weapon: Weapon): void {
-    const spreadRad = Phaser.Math.DegToRad(weapon.stats.spread);
-
-    for (let i = 0; i < weapon.stats.projectileCount; i++) {
-      const offset = (i - (weapon.stats.projectileCount - 1) / 2) * spreadRad;
-      const projectileAngle = angle + offset;
-
-      const projectile = this.projectiles.create(
-        this.player.x, this.player.y, weapon.stats.projectileTexture
-      ) as Phaser.Physics.Arcade.Sprite;
-
-      projectile.setDepth(8);
-      projectile.setData('damage', this.player.getAttackDamage());
-      projectile.setData('piercing', false);
-      projectile.setRotation(projectileAngle);
-      projectile.setVelocity(
-        Math.cos(projectileAngle) * weapon.stats.projectileSpeed,
-        Math.sin(projectileAngle) * weapon.stats.projectileSpeed
-      );
-
-      this.time.delayedCall(1500 * weapon.stats.range, () => {
-        if (projectile.active) projectile.destroy();
-      });
-    }
-  }
-
-  private createExplosion(x: number, y: number, weapon: Weapon): void {
-    // Visual explosion
-    const explosion = this.add.sprite(x, y, 'explosion_effect');
-    explosion.setDepth(15);
-    explosion.setScale(0.5);
-
-    this.tweens.add({
-      targets: explosion,
-      scale: 2,
-      alpha: 0,
-      duration: 300,
-      onComplete: () => explosion.destroy(),
-    });
-
-    // Damage enemies in radius
-    const radius = weapon.stats.aoeRadius;
-    this.enemies.getChildren().forEach((child) => {
-      const enemy = child as unknown as Enemy;
-      if (!enemy.active) return;
-
-      const dist = Phaser.Math.Distance.Between(x, y, enemy.x, enemy.y);
-      if (dist <= radius) {
-        const damage = this.player.getAttackDamage();
-        enemy.takeDamage(damage);
-        this.showDamageNumber(enemy.x, enemy.y, damage, false);
-      }
-    });
-
-    this.shakeCamera(4, 100);
-  }
-
-  private createExplosionFromProjectile(
-    x: number,
-    y: number,
-    projectile: Phaser.Physics.Arcade.Sprite
-  ): void {
-    // Visual explosion
-    const explosion = this.add.sprite(x, y, 'explosion_effect');
-    explosion.setDepth(15);
-    explosion.setScale(0.5);
-
-    this.tweens.add({
-      targets: explosion,
-      scale: 2,
-      alpha: 0,
-      duration: 300,
-      onComplete: () => explosion.destroy(),
-    });
-
-    // Damage enemies in radius
-    const radius = projectile.getData('aoeRadius') || 64;
-    const damage = projectile.getData('damage') || this.player.getAttackDamage();
-
-    this.enemies.getChildren().forEach((child) => {
-      const enemy = child as unknown as Enemy;
-      if (!enemy.active) return;
-
-      const dist = Phaser.Math.Distance.Between(x, y, enemy.x, enemy.y);
-      if (dist <= radius) {
-        enemy.takeDamage(damage);
-        this.showDamageNumber(enemy.x, enemy.y, damage, false);
-      }
-    });
-
-    this.shakeCamera(4, 100);
   }
 
   private hudText!: Phaser.GameObjects.Text;
