@@ -1,5 +1,15 @@
 import { MIN_ROOM_SIZE, MAX_ROOM_SIZE } from '../utils/constants';
 
+export enum RoomType {
+  NORMAL = 'normal',
+  SPAWN = 'spawn',
+  EXIT = 'exit',
+  TREASURE = 'treasure',
+  TRAP = 'trap',
+  SHRINE = 'shrine',
+  CHALLENGE = 'challenge',
+}
+
 export interface Room {
   x: number;
   y: number;
@@ -9,6 +19,7 @@ export interface Room {
   centerY: number;
   id: number;
   doors: { x: number; y: number }[];
+  type: RoomType;
 }
 
 export interface DungeonData {
@@ -44,6 +55,9 @@ export class DungeonGenerator {
     // Find door positions for each room
     this.findDoors();
 
+    // Assign room types
+    this.assignRoomTypes();
+
     // Select spawn and exit points
     const spawnRoom = this.rooms[0];
     const exitRoom = this.rooms[this.rooms.length - 1];
@@ -54,6 +68,43 @@ export class DungeonGenerator {
       spawnPoint: { x: spawnRoom.centerX, y: spawnRoom.centerY },
       exitPoint: { x: exitRoom.centerX, y: exitRoom.centerY },
     };
+  }
+
+  private assignRoomTypes(): void {
+    if (this.rooms.length === 0) return;
+
+    // First room is always spawn
+    this.rooms[0].type = RoomType.SPAWN;
+
+    // Last room is always exit
+    if (this.rooms.length > 1) {
+      this.rooms[this.rooms.length - 1].type = RoomType.EXIT;
+    }
+
+    // Assign special types to middle rooms
+    const middleRooms = this.rooms.slice(1, -1);
+    if (middleRooms.length === 0) return;
+
+    // Shuffle middle rooms for random assignment
+    const shuffled = [...middleRooms].sort(() => Math.random() - 0.5);
+
+    // Assign special room types (guaranteed one of each if enough rooms)
+    const specialTypes = [
+      RoomType.TREASURE,
+      RoomType.SHRINE,
+      RoomType.TRAP,
+      RoomType.CHALLENGE,
+    ];
+
+    let typeIndex = 0;
+    for (const room of shuffled) {
+      if (typeIndex < specialTypes.length && Math.random() < 0.6) {
+        // 60% chance for each special type
+        room.type = specialTypes[typeIndex];
+        typeIndex++;
+      }
+      // Otherwise stays NORMAL
+    }
   }
 
   private generateRooms(): void {
@@ -81,6 +132,7 @@ export class DungeonGenerator {
         centerY: Math.floor(y + roomHeight / 2),
         id: this.rooms.length,
         doors: [],
+        type: RoomType.NORMAL, // Will be assigned after generation
       };
 
       // Check for overlap with existing rooms

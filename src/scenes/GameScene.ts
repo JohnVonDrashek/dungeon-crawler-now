@@ -3,7 +3,7 @@ import { Player } from '../entities/Player';
 import { Enemy } from '../entities/Enemy';
 import { FastEnemy, TankEnemy, RangedEnemy, BossEnemy } from '../entities/enemies/EnemyTypes';
 import { TILE_SIZE, DUNGEON_WIDTH, DUNGEON_HEIGHT } from '../utils/constants';
-import { DungeonGenerator, DungeonData, Room } from '../systems/DungeonGenerator';
+import { DungeonGenerator, DungeonData, Room, RoomType } from '../systems/DungeonGenerator';
 import { CombatSystem } from '../systems/CombatSystem';
 import { LootSystem } from '../systems/LootSystem';
 import { AudioSystem } from '../systems/AudioSystem';
@@ -73,6 +73,25 @@ export class GameScene extends Phaser.Scene {
     const spawnX = this.dungeon.spawnPoint.x * TILE_SIZE + TILE_SIZE / 2;
     const spawnY = this.dungeon.spawnPoint.y * TILE_SIZE + TILE_SIZE / 2;
     this.player = new Player(this, spawnX, spawnY);
+
+    // Create special room object groups (must be before addRoomDecorations)
+    this.chests = this.physics.add.group();
+    this.shrines = this.physics.add.group();
+
+    // Add room decorations (chests, shrines) after player exists for physics overlaps
+    this.addRoomDecorations();
+
+    // Setup special room collisions
+    this.physics.add.overlap(
+      this.player, this.chests,
+      this.handleChestOpen as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
+      undefined, this
+    );
+    this.physics.add.overlap(
+      this.player, this.shrines,
+      this.handleShrineUse as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
+      undefined, this
+    );
 
     // Create projectile groups
     this.projectiles = this.physics.add.group({ runChildUpdate: true });
@@ -155,7 +174,10 @@ export class GameScene extends Phaser.Scene {
           wall.setImmovable(true);
           wall.refreshBody();
         } else if (this.dungeon.tiles[y][x] === 0) {
-          const floor = this.add.sprite(tileX, tileY, 'floor').setOrigin(0, 0);
+          // Determine floor texture based on room type
+          const room = this.getRoomAtTile(x, y);
+          const floorTexture = this.getFloorTextureForRoom(room);
+          const floor = this.add.sprite(tileX, tileY, floorTexture).setOrigin(0, 0);
           floor.setDepth(0);
           this.floorLayer.add(floor);
         }
@@ -163,14 +185,267 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private getRoomAtTile(x: number, y: number): Room | null {
+    for (const room of this.dungeon.rooms) {
+      if (x >= room.x && x < room.x + room.width &&
+          y >= room.y && y < room.y + room.height) {
+        return room;
+      }
+    }
+    return null;
+  }
+
+  private getFloorTextureForRoom(room: Room | null): string {
+    if (!room) return 'floor'; // Corridors use normal floor
+
+    switch (room.type) {
+      case RoomType.TREASURE:
+        return 'floor_treasure';
+      case RoomType.TRAP:
+        return 'floor_trap';
+      case RoomType.SHRINE:
+        return 'floor_shrine';
+      case RoomType.CHALLENGE:
+        return 'floor_challenge';
+      default:
+        return 'floor';
+    }
+  }
+
+  private addRoomDecorations(): void {
+    for (const room of this.dungeon.rooms) {
+      switch (room.type) {
+        case RoomType.TREASURE:
+          // Add chest in center
+          this.addTreasureChest(room);
+          break;
+        case RoomType.SHRINE:
+          // Add healing shrine
+          this.addHealingShrine(room);
+          break;
+        case RoomType.CHALLENGE:
+          // Add skull markers in corners
+          this.addChallengeMarkers(room);
+          break;
+        case RoomType.TRAP:
+          // Trap room decorations handled by hazard system
+          break;
+      }
+    }
+  }
+
+  private chests!: Phaser.Physics.Arcade.Group;
+  private shrines!: Phaser.Physics.Arcade.Group;
+
+  private addTreasureChest(room: Room): void {
+    const chestX = room.centerX * TILE_SIZE + TILE_SIZE / 2;
+    const chestY = room.centerY * TILE_SIZE + TILE_SIZE / 2;
+
+    const chest = this.chests.create(chestX, chestY, 'chest_closed') as Phaser.Physics.Arcade.Sprite;
+    chest.setDepth(3);
+    chest.setImmovable(true);
+    chest.setData('opened', false);
+    chest.setData('room', room);
+
+    // Add glow effect
+    const glow = this.add.sprite(chestX, chestY, 'weapon_drop_glow');
+    glow.setDepth(2);
+    glow.setTint(0xffd700);
+    glow.setAlpha(0.4);
+    glow.setScale(1.5);
+    chest.setData('glow', glow);
+
+    // Pulse animation
+    this.tweens.add({
+      targets: glow,
+      alpha: 0.7,
+      scale: 1.8,
+      duration: 800,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+  }
+
+  private handleChestOpen(
+    _playerObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject,
+    chestObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject
+  ): void {
+    const chest = chestObj as Phaser.Physics.Arcade.Sprite;
+    if (chest.getData('opened')) return;
+
+    chest.setData('opened', true);
+    chest.setTexture('chest_open');
+
+    // Remove glow
+    const glow = chest.getData('glow') as Phaser.GameObjects.Sprite;
+    if (glow) {
+      this.tweens.killTweensOf(glow);
+      glow.destroy();
+    }
+
+    // Spawn loot - guaranteed rare+ item and weapon
+    const lootX = chest.x;
+    const lootY = chest.y - 20;
+
+    this.audioSystem.play('sfx_pickup', 0.6);
+    this.showGameMessage('Treasure found!');
+
+    // Spawn multiple items with offset
+    const treasureLoot = this.lootSystem.generateGuaranteedLoot(ItemRarity.RARE);
+    this.spawnItemDrop(lootX - 15, lootY, treasureLoot);
+
+    // Chance for second item
+    if (Math.random() < 0.5) {
+      const bonusLoot = this.lootSystem.generateGuaranteedLoot(ItemRarity.UNCOMMON);
+      this.spawnItemDrop(lootX + 15, lootY, bonusLoot);
+    }
+
+    // Guaranteed weapon from treasure chests
+    const weapon = Weapon.createRandom(this.floor + 3);
+    this.spawnWeaponDrop(lootX, lootY - 20, weapon);
+  }
+
+  private addHealingShrine(room: Room): void {
+    const shrineX = room.centerX * TILE_SIZE + TILE_SIZE / 2;
+    const shrineY = room.centerY * TILE_SIZE + TILE_SIZE / 2;
+
+    const shrine = this.shrines.create(shrineX, shrineY, 'shrine') as Phaser.Physics.Arcade.Sprite;
+    shrine.setDepth(3);
+    shrine.setImmovable(true);
+    shrine.setData('used', false);
+    shrine.setData('room', room);
+
+    // Add ambient glow
+    const glow = this.add.sprite(shrineX, shrineY, 'weapon_drop_glow');
+    glow.setDepth(2);
+    glow.setTint(0x22d3ee);
+    glow.setAlpha(0.5);
+    glow.setScale(2);
+    shrine.setData('glow', glow);
+
+    // Pulse animation
+    this.tweens.add({
+      targets: glow,
+      alpha: 0.8,
+      scale: 2.5,
+      duration: 1000,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+
+    // Floating animation for shrine
+    this.tweens.add({
+      targets: shrine,
+      y: shrineY - 3,
+      duration: 1500,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+  }
+
+  private handleShrineUse(
+    _playerObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject,
+    shrineObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject
+  ): void {
+    const shrine = shrineObj as Phaser.Physics.Arcade.Sprite;
+    if (shrine.getData('used')) return;
+
+    shrine.setData('used', true);
+
+    // Heal player to full
+    const healAmount = this.player.maxHp - this.player.hp;
+    this.player.hp = this.player.maxHp;
+
+    // Remove glow and fade shrine
+    const glow = shrine.getData('glow') as Phaser.GameObjects.Sprite;
+    if (glow) {
+      this.tweens.killTweensOf(glow);
+      this.tweens.add({
+        targets: glow,
+        alpha: 0,
+        duration: 500,
+        onComplete: () => glow.destroy(),
+      });
+    }
+
+    // Fade shrine to indicate used
+    this.tweens.killTweensOf(shrine);
+    shrine.setTint(0x666666);
+    shrine.setAlpha(0.6);
+
+    // Show healing effect
+    this.audioSystem.play('sfx_levelup', 0.4);
+    this.showGameMessage(`Healed ${healAmount} HP!`);
+
+    // Healing particles
+    for (let i = 0; i < 10; i++) {
+      const particle = this.add.circle(
+        shrine.x + Phaser.Math.Between(-20, 20),
+        shrine.y + Phaser.Math.Between(-20, 20),
+        Phaser.Math.Between(2, 4),
+        0x22d3ee
+      );
+      particle.setDepth(100);
+      particle.setAlpha(0.8);
+
+      this.tweens.add({
+        targets: particle,
+        y: particle.y - 40,
+        alpha: 0,
+        duration: Phaser.Math.Between(500, 800),
+        onComplete: () => particle.destroy(),
+      });
+    }
+  }
+
+  private addChallengeMarkers(room: Room): void {
+    // Add skull markers in corners
+    const corners = [
+      { x: room.x + 1, y: room.y + 1 },
+      { x: room.x + room.width - 2, y: room.y + 1 },
+      { x: room.x + 1, y: room.y + room.height - 2 },
+      { x: room.x + room.width - 2, y: room.y + room.height - 2 },
+    ];
+
+    for (const corner of corners) {
+      const marker = this.add.sprite(
+        corner.x * TILE_SIZE + TILE_SIZE / 2,
+        corner.y * TILE_SIZE + TILE_SIZE / 2,
+        'skull_marker'
+      );
+      marker.setDepth(2);
+      marker.setAlpha(0.7);
+
+      // Subtle pulse
+      this.tweens.add({
+        targets: marker,
+        alpha: 0.9,
+        scale: 1.1,
+        duration: 1000,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    }
+  }
+
   private spawnEnemiesInRoom(room: Room): void {
     const exitRoom = this.dungeon.rooms[this.dungeon.rooms.length - 1];
     const isBossRoom = this.isBossFloor && room.id === exitRoom.id;
+    const isChallengeRoom = room.type === RoomType.CHALLENGE;
 
     // Calculate enemy count based on floor and room size (or 1 for boss)
     let enemyCount: number;
     if (isBossRoom) {
       enemyCount = 1;
+    } else if (isChallengeRoom) {
+      // Challenge rooms have more enemies
+      const roomArea = room.width * room.height;
+      const baseCount = Math.max(2, Math.floor(roomArea / 100));
+      enemyCount = Math.min(baseCount + Math.floor(this.floor / 2), 8);
     } else {
       const roomArea = room.width * room.height;
       const baseCount = Math.max(1, Math.floor(roomArea / 150));
@@ -192,8 +467,8 @@ export class GameScene extends Phaser.Scene {
 
     // Show spawn indicators
     const indicators: Phaser.GameObjects.Graphics[] = [];
-    const indicatorSize = isBossRoom ? TILE_SIZE * 1.5 : TILE_SIZE * 0.8;
-    const indicatorColor = isBossRoom ? 0xfbbf24 : 0xff4444;
+    const indicatorSize = isBossRoom ? TILE_SIZE * 1.5 : isChallengeRoom ? TILE_SIZE * 1.0 : TILE_SIZE * 0.8;
+    const indicatorColor = isBossRoom ? 0xfbbf24 : isChallengeRoom ? 0xaa00ff : 0xff4444;
 
     for (const pos of spawnPositions) {
       const indicator = this.add.graphics();
@@ -241,12 +516,20 @@ export class GameScene extends Phaser.Scene {
           const boss = new BossEnemy(this, pos.x, pos.y, this.floor);
           boss.setProjectileGroup(this.enemyProjectiles);
           enemy = boss;
+        } else if (isChallengeRoom) {
+          // Challenge rooms spawn tougher enemy variants
+          enemy = this.createChallengeEnemy(pos.x, pos.y);
         } else {
           enemy = this.createEnemy(pos.x, pos.y);
         }
         enemy.setTarget(this.player);
         this.enemies.add(enemy as unknown as Phaser.GameObjects.GameObject);
         this.createHealthBar(enemy);
+
+        // Mark challenge room enemies for better rewards
+        if (isChallengeRoom) {
+          enemy.setData('challengeEnemy', true);
+        }
 
         // Spawn pop effect
         enemy.setScale(0);
@@ -286,6 +569,34 @@ export class GameScene extends Phaser.Scene {
         defense: 1 + Math.floor(this.floor / 2),
         speed: 60 + this.floor * 5,
         xpValue: 20 + this.floor * 5,
+      });
+    }
+  }
+
+  private createChallengeEnemy(x: number, y: number): Enemy {
+    // Challenge rooms spawn tougher enemy variants with higher chance of elites
+    const roll = Math.random();
+    const effectiveFloor = this.floor + 2; // Enemies are tougher as if from later floor
+
+    if (roll < 0.3) {
+      // 30% chance for tank in challenge rooms
+      return new TankEnemy(this, x, y, effectiveFloor);
+    } else if (roll < 0.55) {
+      // 25% chance for ranged
+      const ranged = new RangedEnemy(this, x, y, effectiveFloor);
+      ranged.setProjectileGroup(this.enemyProjectiles);
+      return ranged;
+    } else if (roll < 0.75) {
+      // 20% chance for fast
+      return new FastEnemy(this, x, y, effectiveFloor);
+    } else {
+      // 25% chance for elite basic enemy (buffed stats)
+      return new Enemy(this, x, y, 'enemy', {
+        hp: 30 + effectiveFloor * 6,
+        attack: 7 + effectiveFloor * 2,
+        defense: 2 + Math.floor(effectiveFloor / 2),
+        speed: 70 + effectiveFloor * 5,
+        xpValue: 35 + effectiveFloor * 5, // More XP for challenge enemies
       });
     }
   }
@@ -802,15 +1113,20 @@ export class GameScene extends Phaser.Scene {
           });
         }
       } else {
-        // Regular enemies: 40% chance for item, 15% chance for weapon
-        const loot = this.lootSystem.generateLoot(this.floor);
-        if (loot) {
+        // Check if this is a challenge room enemy for better drops
+        const isChallengeEnemy = enemy.getData('challengeEnemy');
+        const dropChance = isChallengeEnemy ? 0.7 : 0.4; // 70% vs 40% item drop
+        const weaponChance = isChallengeEnemy ? 0.3 : 0.15; // 30% vs 15% weapon drop
+
+        // Regular enemies: chance for item
+        const loot = this.lootSystem.generateLoot(this.floor + (isChallengeEnemy ? 2 : 0));
+        if (loot && Math.random() < dropChance / 0.4) { // Adjust for loot system's internal chance
           this.spawnItemDrop(enemy.x, enemy.y, loot);
         }
 
         // Weapon drop chance
-        if (Math.random() < 0.15) {
-          const weapon = Weapon.createRandom(this.floor);
+        if (Math.random() < weaponChance) {
+          const weapon = Weapon.createRandom(this.floor + (isChallengeEnemy ? 2 : 0));
           this.spawnWeaponDrop(enemy.x, enemy.y, weapon);
         }
       }

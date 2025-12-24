@@ -522,5 +522,134 @@ export class BootScene extends Phaser.Scene {
     weaponDropGraphics.fillCircle(10, 10, 6);
     weaponDropGraphics.generateTexture('weapon_drop_glow', 20, 20);
     weaponDropGraphics.destroy();
+
+    // === SPECIAL ROOM FLOORS ===
+
+    // Treasure room floor (golden/yellow tint)
+    const treasureFloorGraphics = this.make.graphics({ x: 0, y: 0 });
+    treasureFloorGraphics.fillStyle(0x4a4520);
+    treasureFloorGraphics.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+    treasureFloorGraphics.fillStyle(0x5c5729);
+    treasureFloorGraphics.fillRect(1, 1, 6, 6);
+    treasureFloorGraphics.fillRect(9, 9, 6, 6);
+    treasureFloorGraphics.lineStyle(1, 0x6b6330);
+    treasureFloorGraphics.strokeRect(0, 0, TILE_SIZE, TILE_SIZE);
+    treasureFloorGraphics.generateTexture('floor_treasure', TILE_SIZE, TILE_SIZE);
+    treasureFloorGraphics.destroy();
+
+    // Trap room floor (dark red/danger tint)
+    const trapFloorGraphics = this.make.graphics({ x: 0, y: 0 });
+    trapFloorGraphics.fillStyle(0x4a2020);
+    trapFloorGraphics.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+    trapFloorGraphics.fillStyle(0x5c2929);
+    trapFloorGraphics.fillRect(2, 2, 5, 5);
+    trapFloorGraphics.fillRect(9, 9, 5, 5);
+    trapFloorGraphics.lineStyle(1, 0x6b3030);
+    trapFloorGraphics.strokeRect(0, 0, TILE_SIZE, TILE_SIZE);
+    trapFloorGraphics.generateTexture('floor_trap', TILE_SIZE, TILE_SIZE);
+    trapFloorGraphics.destroy();
+
+    // Shrine room floor (blue/holy tint)
+    const shrineFloorGraphics = this.make.graphics({ x: 0, y: 0 });
+    shrineFloorGraphics.fillStyle(0x203a4a);
+    shrineFloorGraphics.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+    shrineFloorGraphics.fillStyle(0x29455c);
+    shrineFloorGraphics.fillRect(1, 1, 6, 6);
+    shrineFloorGraphics.fillRect(9, 9, 6, 6);
+    shrineFloorGraphics.lineStyle(1, 0x304d6b);
+    shrineFloorGraphics.strokeRect(0, 0, TILE_SIZE, TILE_SIZE);
+    shrineFloorGraphics.generateTexture('floor_shrine', TILE_SIZE, TILE_SIZE);
+    shrineFloorGraphics.destroy();
+
+    // Challenge room floor (purple/arena tint)
+    const challengeFloorGraphics = this.make.graphics({ x: 0, y: 0 });
+    challengeFloorGraphics.fillStyle(0x3a204a);
+    challengeFloorGraphics.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+    challengeFloorGraphics.fillStyle(0x45295c);
+    challengeFloorGraphics.fillRect(2, 2, 5, 5);
+    challengeFloorGraphics.fillRect(9, 9, 5, 5);
+    challengeFloorGraphics.lineStyle(1, 0x4d306b);
+    challengeFloorGraphics.strokeRect(0, 0, TILE_SIZE, TILE_SIZE);
+    challengeFloorGraphics.generateTexture('floor_challenge', TILE_SIZE, TILE_SIZE);
+    challengeFloorGraphics.destroy();
+
+    // === SPECIAL ROOM OBJECTS ===
+
+    // Treasure chest (closed)
+    const chestGraphics = this.make.graphics({ x: 0, y: 0 });
+    // Chest body
+    chestGraphics.fillStyle(0x8b4513);
+    chestGraphics.fillRect(2, 6, 12, 8);
+    // Chest lid
+    chestGraphics.fillStyle(0xa0522d);
+    chestGraphics.fillRoundedRect(1, 3, 14, 5, 2);
+    // Metal bands
+    chestGraphics.fillStyle(0xfbbf24);
+    chestGraphics.fillRect(1, 4, 14, 1);
+    chestGraphics.fillRect(1, 10, 14, 1);
+    // Lock
+    chestGraphics.fillStyle(0xfbbf24);
+    chestGraphics.fillRect(6, 6, 4, 4);
+    chestGraphics.fillStyle(0x1f2937);
+    chestGraphics.fillRect(7, 7, 2, 2);
+    chestGraphics.generateTexture('chest_closed', TILE_SIZE, TILE_SIZE);
+    chestGraphics.destroy();
+
+    // Treasure chest (open)
+    const chestOpenGraphics = this.make.graphics({ x: 0, y: 0 });
+    // Chest body
+    chestOpenGraphics.fillStyle(0x8b4513);
+    chestOpenGraphics.fillRect(2, 8, 12, 6);
+    // Open lid (tilted back)
+    chestOpenGraphics.fillStyle(0xa0522d);
+    chestOpenGraphics.fillRect(2, 2, 12, 4);
+    // Metal bands
+    chestOpenGraphics.fillStyle(0xfbbf24);
+    chestOpenGraphics.fillRect(1, 3, 14, 1);
+    chestOpenGraphics.fillRect(2, 10, 12, 1);
+    // Gold inside!
+    chestOpenGraphics.fillStyle(0xffd700);
+    chestOpenGraphics.fillCircle(5, 10, 2);
+    chestOpenGraphics.fillCircle(8, 9, 2);
+    chestOpenGraphics.fillCircle(11, 10, 2);
+    chestOpenGraphics.generateTexture('chest_open', TILE_SIZE, TILE_SIZE);
+    chestOpenGraphics.destroy();
+
+    // Healing shrine/fountain
+    const shrineGraphics = this.make.graphics({ x: 0, y: 0 });
+    // Pedestal
+    shrineGraphics.fillStyle(0x6b7280);
+    shrineGraphics.fillRect(4, 10, 8, 6);
+    shrineGraphics.fillRect(2, 14, 12, 2);
+    // Crystal/orb
+    shrineGraphics.fillStyle(0x22d3ee);
+    shrineGraphics.fillCircle(8, 6, 5);
+    shrineGraphics.fillStyle(0x67e8f9);
+    shrineGraphics.fillCircle(6, 4, 2);
+    // Glow effect
+    shrineGraphics.fillStyle(0x22d3ee, 0.3);
+    shrineGraphics.fillCircle(8, 6, 7);
+    shrineGraphics.generateTexture('shrine', TILE_SIZE, TILE_SIZE);
+    shrineGraphics.destroy();
+
+    // Challenge arena skull marker
+    const skullMarkerGraphics = this.make.graphics({ x: 0, y: 0 });
+    // Skull
+    skullMarkerGraphics.fillStyle(0xe5e5e5);
+    skullMarkerGraphics.fillCircle(8, 7, 6);
+    skullMarkerGraphics.fillRect(5, 11, 6, 3);
+    // Eye sockets
+    skullMarkerGraphics.fillStyle(0x1f2937);
+    skullMarkerGraphics.fillCircle(5, 6, 2);
+    skullMarkerGraphics.fillCircle(11, 6, 2);
+    // Nose hole
+    skullMarkerGraphics.fillTriangle(8, 8, 6, 10, 10, 10);
+    // Teeth
+    skullMarkerGraphics.fillStyle(0xe5e5e5);
+    skullMarkerGraphics.fillRect(5, 11, 1, 2);
+    skullMarkerGraphics.fillRect(7, 11, 1, 2);
+    skullMarkerGraphics.fillRect(9, 11, 1, 2);
+    skullMarkerGraphics.generateTexture('skull_marker', TILE_SIZE, TILE_SIZE);
+    skullMarkerGraphics.destroy();
   }
 }

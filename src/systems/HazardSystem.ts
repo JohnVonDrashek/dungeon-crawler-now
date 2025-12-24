@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { Room, DungeonData } from './DungeonGenerator';
+import { Room, DungeonData, RoomType } from './DungeonGenerator';
 import { TILE_SIZE } from '../utils/constants';
 import { Player } from '../entities/Player';
 import { RoomManager, RoomState } from './RoomManager';
@@ -61,24 +61,29 @@ export class HazardSystem {
     // Don't spawn hazards in spawn room (room 0)
     if (room.id === 0) return;
 
+    // Trap rooms get guaranteed extra hazards
+    const isTrapRoom = room.type === RoomType.TRAP;
+
     // Chance to spawn each hazard type increases with floor
     const hazardChance = Math.min(0.4 + this.floor * 0.02, 0.7);
 
     // Spike traps (floor hazards)
-    if (Math.random() < hazardChance) {
-      const spikeCount = Math.floor(Math.random() * 3) + 1;
+    if (isTrapRoom || Math.random() < hazardChance) {
+      const baseCount = isTrapRoom ? 4 : 1;
+      const spikeCount = Math.floor(Math.random() * 3) + baseCount;
       this.spawnSpikeTraps(room, spikeCount);
     }
 
-    // Lava pits (floor hazards, less common)
-    if (Math.random() < hazardChance * 0.5 && this.floor >= 3) {
-      const lavaCount = Math.floor(Math.random() * 2) + 1;
+    // Lava pits (floor hazards, less common - but guaranteed in trap rooms)
+    if (isTrapRoom || (Math.random() < hazardChance * 0.5 && this.floor >= 3)) {
+      const baseCount = isTrapRoom ? 2 : 1;
+      const lavaCount = Math.floor(Math.random() * 2) + baseCount;
       this.spawnLavaPits(room, lavaCount);
     }
 
-    // Arrow shooters (wall hazards)
-    if (Math.random() < hazardChance * 0.6 && this.floor >= 2) {
-      this.spawnArrowShooters(room, dungeonData);
+    // Arrow shooters (wall hazards - more in trap rooms)
+    if (isTrapRoom || (Math.random() < hazardChance * 0.6 && this.floor >= 2)) {
+      this.spawnArrowShooters(room, dungeonData, isTrapRoom ? 4 : 2);
     }
   }
 
@@ -141,11 +146,11 @@ export class HazardSystem {
     }
   }
 
-  private spawnArrowShooters(room: Room, dungeonData: DungeonData): void {
+  private spawnArrowShooters(room: Room, dungeonData: DungeonData, maxShooters: number = 2): void {
     const tiles = dungeonData.tiles;
 
-    // Try to place 1-2 arrow shooters on walls
-    const attempts = 2;
+    // Try to place arrow shooters on walls
+    const attempts = maxShooters;
     let placed = 0;
 
     for (let i = 0; i < attempts * 10 && placed < attempts; i++) {

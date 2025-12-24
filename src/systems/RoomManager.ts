@@ -197,6 +197,21 @@ export class RoomManager {
     return null;
   }
 
+  // Check if player is deep enough inside a room to trigger activation
+  // Requires player to be at least 1 tile inside from any edge
+  private isPlayerDeepInRoom(playerX: number, playerY: number, room: Room): boolean {
+    const tileX = Math.floor(playerX / TILE_SIZE);
+    const tileY = Math.floor(playerY / TILE_SIZE);
+    const margin = 1; // Must be this many tiles inside the room
+
+    return (
+      tileX >= room.x + margin &&
+      tileX < room.x + room.width - margin &&
+      tileY >= room.y + margin &&
+      tileY < room.y + room.height - margin
+    );
+  }
+
   // Call this each frame with player position
   update(playerX: number, playerY: number): Room | null {
     const room = this.getRoomAtPosition(playerX, playerY);
@@ -205,9 +220,14 @@ export class RoomManager {
       const roomData = this.roomDataMap.get(room.id);
 
       if (roomData && roomData.state === RoomState.UNVISITED) {
-        // Player entered a new unvisited room
-        this.currentRoomId = room.id;
-        return room; // Return room to trigger enemy spawn
+        // Only activate if player is deep enough inside the room
+        // This prevents the softlock from stepping back immediately
+        if (this.isPlayerDeepInRoom(playerX, playerY, room)) {
+          this.currentRoomId = room.id;
+          return room; // Return room to trigger enemy spawn
+        }
+        // Player is in room but not deep enough - don't activate yet
+        return null;
       }
 
       this.currentRoomId = room.id;
