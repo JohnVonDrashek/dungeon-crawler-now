@@ -3,6 +3,11 @@ import { Player } from '../entities/Player';
 import { Item, ItemType, ItemRarity, generateProceduralItemOfType, RARITY_COLORS } from '../systems/Item';
 import { Weapon } from '../systems/Weapon';
 import { createItemFromWeapon } from '../systems/Item';
+import UIPlugin from 'phaser3-rex-plugins/templates/ui/ui-plugin.js';
+
+interface RexUIScene extends Phaser.Scene {
+  rexUI: UIPlugin;
+}
 
 interface ShopItem {
   item: Item;
@@ -11,49 +16,38 @@ interface ShopItem {
 }
 
 export class ShopUI {
-  private scene: Phaser.Scene;
+  private scene: RexUIScene;
   private player: Player;
-  private container: Phaser.GameObjects.Container;
+  private panel: any | null = null;
+  private overlay: Phaser.GameObjects.Rectangle | null = null;
   private isVisible: boolean = false;
   private floor: number;
 
   private shopItems: ShopItem[] = [];
   private healCost: number = 0;
   private rerollCost: number = 50;
-  private itemSlots: Phaser.GameObjects.Container[] = [];
+  private itemSlots: { container: any; bg: any; soldOverlay: any; soldText: Phaser.GameObjects.Text; priceText: Phaser.GameObjects.Text }[] = [];
+
+  private goldDisplay: Phaser.GameObjects.Text | null = null;
+  private healBtn: any | null = null;
+  private healText: Phaser.GameObjects.Text | null = null;
+  private rerollText: Phaser.GameObjects.Text | null = null;
+  private tooltipContainer: Phaser.GameObjects.Container | null = null;
+  private escKey: Phaser.Input.Keyboard.Key | null = null;
 
   private onCloseCallback?: () => void;
 
   constructor(scene: Phaser.Scene, player: Player, floor: number) {
-    this.scene = scene;
+    this.scene = scene as RexUIScene;
     this.player = player;
     this.floor = floor;
 
-    // Create container at 0,0 - we'll reposition it when shown
-    this.container = scene.add.container(0, 0);
-    this.container.setDepth(200);
-    this.container.setVisible(false);
-
     this.generateShopInventory();
-    this.createUI();
-  }
-
-  private updatePosition(): void {
-    // Position the container at the screen center
-    // Use scale dimensions for reliable screen size, camera scroll for offset
-    const camera = this.scene.cameras.main;
-    const screenWidth = this.scene.scale.width;
-    const screenHeight = this.scene.scale.height;
-    this.container.setPosition(
-      camera.scrollX + screenWidth / 2,
-      camera.scrollY + screenHeight / 2
-    );
   }
 
   private generateShopInventory(): void {
     this.shopItems = [];
 
-    // Generate 4-6 items for sale
     const itemCount = 4 + Math.floor(Math.random() * 3);
 
     for (let i = 0; i < itemCount; i++) {
@@ -61,11 +55,9 @@ export class ShopUI {
       let item: Item;
 
       if (roll < 0.3) {
-        // 30% chance for weapon
         const weapon = Weapon.createRandom(this.floor);
         item = createItemFromWeapon(weapon);
       } else if (roll < 0.5) {
-        // 20% chance for consumable (health potion)
         item = {
           id: `shop_potion_${i}`,
           name: this.floor >= 5 ? 'Large Health Potion' : 'Health Potion',
@@ -76,7 +68,6 @@ export class ShopUI {
           description: this.floor >= 5 ? 'Restores 60 HP.' : 'Restores 30 HP.',
         };
       } else {
-        // 50% chance for armor/accessory
         const type = Math.random() < 0.5 ? ItemType.ARMOR : ItemType.ACCESSORY;
         const rarityRoll = Math.random();
         let rarity: ItemRarity;
@@ -88,14 +79,12 @@ export class ShopUI {
         item = generateProceduralItemOfType(this.floor, rarity, type);
       }
 
-      // Calculate price based on rarity and floor
       const basePrice = this.getBasePrice(item);
       const price = Math.floor(basePrice * (1 + this.floor * 0.1));
 
       this.shopItems.push({ item, price, sold: false });
     }
 
-    // Calculate heal cost based on missing HP
     const missingHp = this.player.maxHp - this.player.hp;
     this.healCost = Math.max(10, Math.floor(missingHp * 0.5));
   }
@@ -118,155 +107,183 @@ export class ShopUI {
     return typeBase[item.type] * rarityMultiplier[item.rarity];
   }
 
-  private createUI(): void {
-    const width = this.scene.scale.width;
-    const height = this.scene.scale.height;
+  show(onClose?: () => void): void {
+    this.onCloseCallback = onClose;
 
-    // Dark overlay (positioned at 0,0 relative to container which is at screen center)
-    const overlay = this.scene.add.rectangle(
-      0, 0,
-      width * 2, height * 2,
-      0x000000, 0.8
-    );
-    this.container.add(overlay);
+    if (this.panel) {
+      this.panel.destroy();
+      this.panel = null;
+    }
+    if (this.overlay) {
+      this.overlay.destroy();
+      this.overlay = null;
+    }
 
-    // Shop panel - centered at container origin (0,0)
-    const panelWidth = 500;
-    const panelHeight = 400;
+    this.isVisible = true;
+    this.itemSlots = [];
 
-    const panel = this.scene.add.rectangle(
-      0, 0,
-      panelWidth, panelHeight,
-      0x1f2937, 1
-    );
-    panel.setStrokeStyle(2, 0xfbbf24);
-    this.container.add(panel);
+    const cam = this.scene.cameras.main;
+    const centerX = cam.scrollX + cam.width / 2;
+    const centerY = cam.scrollY + cam.height / 2;
 
-    // Title
-    const title = this.scene.add.text(0, -170, 'SHOP', {
+    // Background overlay
+    this.overlay = this.scene.add.rectangle(centerX, centerY, cam.width * 2, cam.height * 2, 0x000000, 0.8);
+    this.overlay.setDepth(199);
+
+    // Build panel
+    this.panel = this.scene.rexUI.add.sizer({
+      x: centerX,
+      y: centerY,
+      orientation: 'y',
+      space: { left: 25, right: 25, top: 20, bottom: 20, item: 15 },
+    })
+      .addBackground(
+        this.scene.rexUI.add.roundRectangle(0, 0, 0, 0, 8, 0x1f2937)
+          .setStrokeStyle(2, 0xfbbf24)
+      )
+      .add(this.createHeader(), { expand: true })
+      .add(this.createGoldDisplay(), { align: 'center' })
+      .add(this.createItemGrid(), { align: 'center' })
+      .add(this.createActionButtons(), { align: 'center' })
+      .layout();
+
+    this.panel.setDepth(200);
+
+    // Create tooltip container
+    this.tooltipContainer = this.scene.add.container(0, 0);
+    this.tooltipContainer.setDepth(251);
+    this.tooltipContainer.setVisible(false);
+
+    // Setup ESC key to close
+    if (this.scene.input.keyboard) {
+      this.escKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+      this.escKey.on('down', this.handleEscKey, this);
+    }
+
+    this.updateGoldDisplay();
+  }
+
+  private handleEscKey(): void {
+    if (this.isVisible) {
+      this.close();
+    }
+  }
+
+  private createHeader(): any {
+    const title = this.scene.add.text(0, 0, 'SHOP', {
       fontSize: '24px',
+      fontFamily: 'monospace',
       color: '#fbbf24',
       fontStyle: 'bold',
     });
-    title.setOrigin(0.5);
-    this.container.add(title);
 
-    // Player gold display
-    const goldDisplay = this.scene.add.text(0, -140, `Your Gold: ${this.player.gold}`, {
-      fontSize: '16px',
-      color: '#ffd700',
-    });
-    goldDisplay.setOrigin(0.5);
-    goldDisplay.setName('goldDisplay');
-    this.container.add(goldDisplay);
-
-    // Create item slots (centered at 0,0)
-    this.createItemSlots(0, 0);
-
-    // Heal button
-    this.createHealButton(-100, 130);
-
-    // Reroll button
-    this.createRerollButton(100, 130);
-
-    // Continue button
-    const continueBtn = this.scene.add.rectangle(
-      0, 170,
-      120, 35,
-      0x22c55e
-    );
-    continueBtn.setInteractive({ useHandCursor: true });
-    continueBtn.on('pointerover', () => continueBtn.setFillStyle(0x16a34a));
-    continueBtn.on('pointerout', () => continueBtn.setFillStyle(0x22c55e));
-    continueBtn.on('pointerdown', () => this.close());
-
-    const continueText = this.scene.add.text(0, 170, 'Continue →', {
-      fontSize: '14px',
-      color: '#ffffff',
+    const closeBtn = this.scene.add.text(0, 0, 'X', {
+      fontSize: '18px',
+      fontFamily: 'monospace',
+      color: '#9ca3af',
       fontStyle: 'bold',
     });
-    continueText.setOrigin(0.5);
+    closeBtn.setInteractive({ useHandCursor: true });
+    closeBtn.on('pointerover', () => closeBtn.setColor('#ef4444'));
+    closeBtn.on('pointerout', () => closeBtn.setColor('#9ca3af'));
+    closeBtn.on('pointerdown', () => this.close());
 
-    this.container.add([continueBtn, continueText]);
+    return this.scene.rexUI.add.sizer({ orientation: 'x', space: { item: 20 } })
+      .add(title, { align: 'left' })
+      .addSpace()
+      .add(closeBtn, { align: 'right' });
   }
 
-  private createItemSlots(centerX: number, centerY: number): void {
-    const startX = centerX - 200;
-    const startY = centerY - 100;
-    const slotWidth = 80;
-    const slotHeight = 100;
-    const cols = 5;
+  private createGoldDisplay(): Phaser.GameObjects.Text {
+    this.goldDisplay = this.scene.add.text(0, 0, `Your Gold: ${this.player.gold}`, {
+      fontSize: '16px',
+      fontFamily: 'monospace',
+      color: '#ffd700',
+    });
+    return this.goldDisplay;
+  }
 
-    this.itemSlots = [];
+  private createItemGrid(): any {
+    const cols = 5;
+    const rows = Math.ceil(this.shopItems.length / cols);
+
+    const gridSizer = this.scene.rexUI.add.gridSizer({
+      column: cols,
+      row: rows,
+      columnProportions: 0,
+      rowProportions: 0,
+      space: { column: 10, row: 10 },
+    });
 
     for (let i = 0; i < this.shopItems.length; i++) {
       const col = i % cols;
       const row = Math.floor(i / cols);
-      const x = startX + col * (slotWidth + 10) + slotWidth / 2;
-      const y = startY + row * (slotHeight + 10) + slotHeight / 2;
-
-      const slot = this.createItemSlot(x, y, i);
-      this.itemSlots.push(slot);
-      this.container.add(slot);
+      const slot = this.createItemSlot(i);
+      gridSizer.add(slot.container, { column: col, row: row, align: 'center' });
     }
+
+    return gridSizer;
   }
 
-  private createItemSlot(x: number, y: number, index: number): Phaser.GameObjects.Container {
+  private createItemSlot(index: number): { container: any; bg: any; soldOverlay: any; soldText: Phaser.GameObjects.Text; priceText: Phaser.GameObjects.Text } {
     const shopItem = this.shopItems[index];
     const item = shopItem.item;
-    const container = this.scene.add.container(x, y);
 
-    // Background
-    const bg = this.scene.add.rectangle(0, 0, 75, 95, 0x374151);
-    bg.setStrokeStyle(1, RARITY_COLORS[item.rarity]);
-    container.add(bg);
+    const bg = this.scene.rexUI.add.roundRectangle(0, 0, 75, 95, 4, 0x374151)
+      .setStrokeStyle(1, RARITY_COLORS[item.rarity]);
 
-    // Item icon
     const iconTexture = this.getItemTexture(item);
-    const icon = this.scene.add.sprite(0, -20, iconTexture);
+    const icon = this.scene.add.sprite(0, 0, iconTexture);
     icon.setTint(RARITY_COLORS[item.rarity]);
-    container.add(icon);
 
-    // Item name (truncated)
     const name = item.name.length > 10 ? item.name.substring(0, 9) + '...' : item.name;
-    const nameText = this.scene.add.text(0, 10, name, {
+    const nameText = this.scene.add.text(0, 0, name, {
       fontSize: '9px',
+      fontFamily: 'monospace',
       color: '#ffffff',
     });
-    nameText.setOrigin(0.5);
-    container.add(nameText);
 
-    // Price
-    const priceText = this.scene.add.text(0, 30, `${shopItem.price}g`, {
+    const priceText = this.scene.add.text(0, 0, `${shopItem.price}g`, {
       fontSize: '11px',
+      fontFamily: 'monospace',
       color: this.player.canAfford(shopItem.price) ? '#ffd700' : '#ff6666',
     });
-    priceText.setOrigin(0.5);
-    priceText.setName('price');
-    container.add(priceText);
 
-    // Sold overlay
-    const soldOverlay = this.scene.add.rectangle(0, 0, 75, 95, 0x000000, 0.7);
+    const soldOverlay = this.scene.rexUI.add.roundRectangle(0, 0, 75, 95, 4, 0x000000, 0.7);
     soldOverlay.setVisible(shopItem.sold);
-    soldOverlay.setName('soldOverlay');
-    container.add(soldOverlay);
 
     const soldText = this.scene.add.text(0, 0, 'SOLD', {
       fontSize: '12px',
+      fontFamily: 'monospace',
       color: '#ff6666',
       fontStyle: 'bold',
     });
-    soldText.setOrigin(0.5);
     soldText.setVisible(shopItem.sold);
-    soldText.setName('soldText');
-    container.add(soldText);
+
+    const container = this.scene.rexUI.add.overlapSizer({
+      width: 75,
+      height: 95,
+    })
+      .add(bg, { align: 'center', expand: false })
+      .add(
+        this.scene.rexUI.add.sizer({ orientation: 'y', space: { item: 5 } })
+          .add(icon, { align: 'center' })
+          .add(nameText, { align: 'center' })
+          .add(priceText, { align: 'center' }),
+        { align: 'center', expand: false }
+      )
+      .add(soldOverlay, { align: 'center', expand: false })
+      .add(soldText, { align: 'center', expand: false });
+
+    const slotData = { container, bg, soldOverlay, soldText, priceText };
+    this.itemSlots.push(slotData);
 
     // Make interactive
     bg.setInteractive({ useHandCursor: true });
     bg.on('pointerover', () => {
       if (!shopItem.sold) {
         bg.setFillStyle(0x4b5563);
-        this.showTooltip(x, y - 60, item, shopItem.price);
+        this.showTooltip(item, shopItem.price);
       }
     });
     bg.on('pointerout', () => {
@@ -279,7 +296,58 @@ export class ShopUI {
       }
     });
 
-    return container;
+    return slotData;
+  }
+
+  private createActionButtons(): any {
+    const missingHp = this.player.maxHp - this.player.hp;
+
+    // Heal button
+    const healBg = this.scene.rexUI.add.roundRectangle(0, 0, 140, 35, 4, missingHp > 0 ? 0xef4444 : 0x666666);
+    this.healText = this.scene.add.text(0, 0, missingHp > 0 ? `Heal Full (${this.healCost}g)` : 'Full HP', {
+      fontSize: '12px',
+      fontFamily: 'monospace',
+      color: '#ffffff',
+    });
+    this.healBtn = this.scene.rexUI.add.label({
+      background: healBg,
+      text: this.healText,
+      align: 'center',
+      space: { left: 10, right: 10, top: 8, bottom: 8 },
+    });
+
+    if (missingHp > 0) {
+      this.healBtn.setInteractive({ useHandCursor: true });
+      this.healBtn.on('pointerover', () => healBg.setFillStyle(0xdc2626));
+      this.healBtn.on('pointerout', () => healBg.setFillStyle(0xef4444));
+      this.healBtn.on('pointerdown', () => this.buyHeal());
+    }
+
+    // Reroll button
+    const rerollBg = this.scene.rexUI.add.roundRectangle(0, 0, 140, 35, 4, 0x8b5cf6);
+    this.rerollText = this.scene.add.text(0, 0, `Reroll (${this.rerollCost}g)`, {
+      fontSize: '12px',
+      fontFamily: 'monospace',
+      color: '#ffffff',
+    });
+    const rerollBtn = this.scene.rexUI.add.label({
+      background: rerollBg,
+      text: this.rerollText,
+      align: 'center',
+      space: { left: 10, right: 10, top: 8, bottom: 8 },
+    });
+
+    rerollBtn.setInteractive({ useHandCursor: true });
+    rerollBtn.on('pointerover', () => rerollBg.setFillStyle(0x7c3aed));
+    rerollBtn.on('pointerout', () => rerollBg.setFillStyle(0x8b5cf6));
+    rerollBtn.on('pointerdown', () => this.rerollShop());
+
+    return this.scene.rexUI.add.sizer({
+      orientation: 'x',
+      space: { item: 20 },
+    })
+      .add(this.healBtn, { align: 'center' })
+      .add(rerollBtn, { align: 'center' });
   }
 
   private getItemTexture(item: Item): string {
@@ -301,19 +369,20 @@ export class ShopUI {
     }
   }
 
-  private tooltip: Phaser.GameObjects.Container | null = null;
-
-  private showTooltip(x: number, y: number, item: Item, price: number): void {
+  private showTooltip(item: Item, price: number): void {
     this.hideTooltip();
+    if (!this.tooltipContainer) return;
 
-    const tooltip = this.scene.add.container(x, y);
-    tooltip.setDepth(250);
+    const cam = this.scene.cameras.main;
+    const centerX = cam.scrollX + cam.width / 2;
+    const centerY = cam.scrollY + cam.height / 2;
 
-    const bg = this.scene.add.rectangle(0, 0, 150, 80, 0x1f2937, 0.95);
+    const bg = this.scene.add.rectangle(0, 0, 160, 90, 0x1f2937, 0.95);
     bg.setStrokeStyle(1, RARITY_COLORS[item.rarity]);
 
-    const nameText = this.scene.add.text(0, -25, item.name, {
+    const nameText = this.scene.add.text(0, -30, item.name, {
       fontSize: '11px',
+      fontFamily: 'monospace',
       color: '#ffffff',
       fontStyle: 'bold',
     });
@@ -321,28 +390,30 @@ export class ShopUI {
 
     const descText = this.scene.add.text(0, 0, item.description, {
       fontSize: '9px',
+      fontFamily: 'monospace',
       color: '#aaaaaa',
-      wordWrap: { width: 140 },
+      wordWrap: { width: 150 },
       align: 'center',
     });
     descText.setOrigin(0.5);
 
     const canAfford = this.player.canAfford(price);
-    const priceInfo = this.scene.add.text(0, 25, canAfford ? 'Click to buy' : 'Not enough gold', {
+    const priceInfo = this.scene.add.text(0, 30, canAfford ? 'Click to buy' : 'Not enough gold', {
       fontSize: '9px',
+      fontFamily: 'monospace',
       color: canAfford ? '#22c55e' : '#ff6666',
     });
     priceInfo.setOrigin(0.5);
 
-    tooltip.add([bg, nameText, descText, priceInfo]);
-    this.container.add(tooltip);
-    this.tooltip = tooltip;
+    this.tooltipContainer.add([bg, nameText, descText, priceInfo]);
+    this.tooltipContainer.setPosition(centerX, centerY - 120);
+    this.tooltipContainer.setVisible(true);
   }
 
   private hideTooltip(): void {
-    if (this.tooltip) {
-      this.tooltip.destroy();
-      this.tooltip = null;
+    if (this.tooltipContainer) {
+      this.tooltipContainer.removeAll(true);
+      this.tooltipContainer.setVisible(false);
     }
   }
 
@@ -351,66 +422,25 @@ export class ShopUI {
     if (shopItem.sold) return;
 
     if (!this.player.spendGold(shopItem.price)) {
-      // Show "not enough gold" feedback
       this.showMessage('Not enough gold!', '#ff6666');
       return;
     }
 
-    // Add item to player inventory
     if (!this.player.pickupItem(shopItem.item)) {
-      // Inventory full - refund
       this.player.addGold(shopItem.price);
       this.showMessage('Inventory full!', '#ff6666');
       return;
     }
 
-    // Mark as sold
     shopItem.sold = true;
 
-    // Update UI
     const slot = this.itemSlots[index];
-    const soldOverlay = slot.getByName('soldOverlay') as Phaser.GameObjects.Rectangle;
-    const soldText = slot.getByName('soldText') as Phaser.GameObjects.Text;
-    soldOverlay.setVisible(true);
-    soldText.setVisible(true);
+    slot.soldOverlay.setVisible(true);
+    slot.soldText.setVisible(true);
 
     this.updateGoldDisplay();
     this.showMessage(`Bought ${shopItem.item.name}!`, '#22c55e');
     this.hideTooltip();
-  }
-
-  private createHealButton(x: number, y: number): void {
-    const missingHp = this.player.maxHp - this.player.hp;
-
-    const btn = this.scene.add.rectangle(x, y, 140, 35, 0xef4444);
-    btn.setInteractive({ useHandCursor: true });
-    btn.setName('healBtn');
-
-    const text = this.scene.add.text(x, y, `Heal Full (${this.healCost}g)`, {
-      fontSize: '12px',
-      color: '#ffffff',
-    });
-    text.setOrigin(0.5);
-    text.setName('healText');
-
-    if (missingHp <= 0) {
-      btn.setFillStyle(0x666666);
-      text.setText('Full HP');
-    }
-
-    btn.on('pointerover', () => {
-      if (missingHp > 0) btn.setFillStyle(0xdc2626);
-    });
-    btn.on('pointerout', () => {
-      if (missingHp > 0) btn.setFillStyle(0xef4444);
-    });
-    btn.on('pointerdown', () => {
-      if (missingHp > 0) {
-        this.buyHeal();
-      }
-    });
-
-    this.container.add([btn, text]);
   }
 
   private buyHeal(): void {
@@ -428,29 +458,14 @@ export class ShopUI {
     this.updateGoldDisplay();
 
     // Update heal button
-    const healBtn = this.container.getByName('healBtn') as Phaser.GameObjects.Rectangle;
-    const healText = this.container.getByName('healText') as Phaser.GameObjects.Text;
-    healBtn.setFillStyle(0x666666);
-    healText.setText('Full HP');
+    if (this.healBtn && this.healText) {
+      const bg = this.healBtn.getElement('background');
+      if (bg) bg.setFillStyle(0x666666);
+      this.healText.setText('Full HP');
+      this.healBtn.disableInteractive();
+    }
 
     this.showMessage('Healed to full!', '#22c55e');
-  }
-
-  private createRerollButton(x: number, y: number): void {
-    const btn = this.scene.add.rectangle(x, y, 140, 35, 0x8b5cf6);
-    btn.setInteractive({ useHandCursor: true });
-
-    const text = this.scene.add.text(x, y, `Reroll (${this.rerollCost}g)`, {
-      fontSize: '12px',
-      color: '#ffffff',
-    });
-    text.setOrigin(0.5);
-
-    btn.on('pointerover', () => btn.setFillStyle(0x7c3aed));
-    btn.on('pointerout', () => btn.setFillStyle(0x8b5cf6));
-    btn.on('pointerdown', () => this.rerollShop());
-
-    this.container.add([btn, text]);
   }
 
   private rerollShop(): void {
@@ -459,86 +474,92 @@ export class ShopUI {
       return;
     }
 
-    // Increase reroll cost
     this.rerollCost = Math.floor(this.rerollCost * 1.5);
 
-    // Destroy old slots
-    for (const slot of this.itemSlots) {
-      slot.destroy();
+    // Update reroll button text
+    if (this.rerollText) {
+      this.rerollText.setText(`Reroll (${this.rerollCost}g)`);
     }
-    this.itemSlots = [];
 
-    // Generate new inventory
+    // Regenerate and rebuild
     this.generateShopInventory();
 
-    // Recreate slots (centered at 0,0)
-    this.createItemSlots(0, 0);
+    // Close and reopen to rebuild
+    const callback = this.onCloseCallback;
+    this.close();
+    this.show(callback);
 
-    this.updateGoldDisplay();
     this.showMessage('Shop rerolled!', '#8b5cf6');
   }
 
   private updateGoldDisplay(): void {
-    const goldDisplay = this.container.getByName('goldDisplay') as Phaser.GameObjects.Text;
-    if (goldDisplay) {
-      goldDisplay.setText(`Your Gold: ${this.player.gold}`);
+    if (this.goldDisplay) {
+      this.goldDisplay.setText(`Your Gold: ${this.player.gold}`);
     }
 
     // Update price colors
     for (let i = 0; i < this.itemSlots.length; i++) {
       const slot = this.itemSlots[i];
       const shopItem = this.shopItems[i];
-      const priceText = slot.getByName('price') as Phaser.GameObjects.Text;
-      if (priceText && !shopItem.sold) {
-        priceText.setColor(this.player.canAfford(shopItem.price) ? '#ffd700' : '#ff6666');
+      if (slot.priceText && !shopItem.sold) {
+        slot.priceText.setColor(this.player.canAfford(shopItem.price) ? '#ffd700' : '#ff6666');
       }
     }
   }
 
-  private message: Phaser.GameObjects.Text | null = null;
-
   private showMessage(text: string, color: string): void {
-    if (this.message) {
-      this.message.destroy();
-    }
+    const cam = this.scene.cameras.main;
+    const centerX = cam.scrollX + cam.width / 2;
+    const centerY = cam.scrollY + cam.height / 2;
 
-    // Position relative to container (which is at screen center)
-    this.message = this.scene.add.text(0, 80, text, {
+    const message = this.scene.add.text(centerX, centerY + 100, text, {
       fontSize: '16px',
+      fontFamily: 'monospace',
       color: color,
       fontStyle: 'bold',
     });
-    this.message.setOrigin(0.5);
-    this.message.setDepth(260);
-    this.container.add(this.message);
+    message.setOrigin(0.5);
+    message.setDepth(260);
 
     this.scene.tweens.add({
-      targets: this.message,
+      targets: message,
       alpha: 0,
-      y: 60,
+      y: centerY + 80,
       duration: 1000,
       delay: 500,
-      onComplete: () => {
-        if (this.message) {
-          this.message.destroy();
-          this.message = null;
-        }
-      },
+      onComplete: () => message.destroy(),
     });
-  }
-
-  show(onClose?: () => void): void {
-    this.onCloseCallback = onClose;
-    this.isVisible = true;
-    this.updatePosition();
-    this.container.setVisible(true);
-    this.updateGoldDisplay();
   }
 
   close(): void {
     this.isVisible = false;
-    this.container.setVisible(false);
     this.hideTooltip();
+
+    // Remove ESC key listener
+    if (this.escKey) {
+      this.escKey.off('down', this.handleEscKey, this);
+      this.escKey = null;
+    }
+
+    if (this.tooltipContainer) {
+      this.tooltipContainer.destroy();
+      this.tooltipContainer = null;
+    }
+    if (this.panel) {
+      this.panel.destroy();
+      this.panel = null;
+    }
+    if (this.overlay) {
+      this.overlay.destroy();
+      this.overlay = null;
+    }
+
+    this.itemSlots = [];
+    this.goldDisplay = null;
+    this.healBtn = null;
+    this.healText = null;
+    this.rerollText = null;
+
     if (this.onCloseCallback) {
       this.onCloseCallback();
     }
@@ -548,29 +569,17 @@ export class ShopUI {
     return this.isVisible;
   }
 
-  // Called externally (e.g., from reroll crystal in ShopScene)
   rerollInventory(): void {
-    // Destroy old slots
-    for (const slot of this.itemSlots) {
-      slot.destroy();
-    }
-    this.itemSlots = [];
-
-    // Generate new inventory
     this.generateShopInventory();
 
-    // Recreate slots if visible (centered at 0,0)
     if (this.isVisible) {
-      this.createItemSlots(0, 0);
-      this.updateGoldDisplay();
+      const callback = this.onCloseCallback;
+      this.close();
+      this.show(callback);
     }
   }
 
   destroy(): void {
-    this.hideTooltip();
-    if (this.message) {
-      this.message.destroy();
-    }
-    this.container.destroy();
+    this.close();
   }
 }
