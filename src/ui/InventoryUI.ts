@@ -1,36 +1,30 @@
 import Phaser from 'phaser';
 import { Player } from '../entities/Player';
 import { Item, ItemType, ItemRarity, RARITY_COLORS } from '../systems/Item';
+import UIPlugin from 'phaser3-rex-plugins/templates/ui/ui-plugin.js';
+
+interface RexUIScene extends Phaser.Scene {
+  rexUI: UIPlugin;
+}
 
 export class InventoryUI {
-  private scene: Phaser.Scene;
+  private scene: RexUIScene;
   private player: Player;
-  private container: Phaser.GameObjects.Container;
+  private panel: any | null = null;
+  private overlay: Phaser.GameObjects.Rectangle | null = null;
   private isVisible: boolean = false;
 
-  private background!: Phaser.GameObjects.Rectangle;
-  private titleText!: Phaser.GameObjects.Text;
-  private itemSlots: Phaser.GameObjects.Container[] = [];
-  private equipmentSlots: Map<string, Phaser.GameObjects.Container> = new Map();
+  private itemSlots: { container: any; bg: any; icon: Phaser.GameObjects.Sprite; indicator: any; compareIndicator: Phaser.GameObjects.Text }[] = [];
+  private equipmentSlots: Map<string, { container: any; bg: any; icon: Phaser.GameObjects.Sprite | null; indicator: any }> = new Map();
   private tooltipContainer!: Phaser.GameObjects.Container;
 
-  private readonly PANEL_WIDTH = 600;
-  private readonly PANEL_HEIGHT = 400;
   private readonly SLOT_SIZE = 40;
   private readonly SLOTS_PER_ROW = 10;
 
   constructor(scene: Phaser.Scene, player: Player) {
-    this.scene = scene;
+    this.scene = scene as RexUIScene;
     this.player = player;
 
-    // Create container at 0,0 - we'll reposition it each time it opens
-    this.container = scene.add.container(0, 0);
-    this.container.setDepth(200);
-    this.container.setVisible(false);
-
-    this.createPanel();
-    this.createEquipmentSlots();
-    this.createInventoryGrid();
     this.createTooltip();
 
     // Listen for inventory changes
@@ -38,182 +32,213 @@ export class InventoryUI {
     scene.events.on('equipmentChanged', () => this.refresh());
   }
 
-  private updatePosition(): void {
-    // Position the container at the camera's center in world coordinates
-    const camera = this.scene.cameras.main;
-    this.container.setPosition(
-      camera.scrollX + camera.width / 2,
-      camera.scrollY + camera.height / 2
-    );
+  private createTooltip(): void {
+    this.tooltipContainer = this.scene.add.container(0, 0);
+    this.tooltipContainer.setDepth(251);
+    this.tooltipContainer.setVisible(false);
   }
 
-  private createPanel(): void {
-    // Dark semi-transparent background
-    this.background = this.scene.add.rectangle(
-      0,
-      0,
-      this.PANEL_WIDTH,
-      this.PANEL_HEIGHT,
-      0x1a1a2e,
-      0.95
-    );
-    this.background.setStrokeStyle(2, 0x8b5cf6);
-    this.container.add(this.background);
+  show(): void {
+    if (this.panel) {
+      this.panel.destroy();
+      this.panel = null;
+    }
+    if (this.overlay) {
+      this.overlay.destroy();
+      this.overlay = null;
+    }
 
-    // Title
-    this.titleText = this.scene.add.text(0, -this.PANEL_HEIGHT / 2 + 20, 'INVENTORY', {
+    this.isVisible = true;
+    this.itemSlots = [];
+    this.equipmentSlots.clear();
+
+    const cam = this.scene.cameras.main;
+    const centerX = cam.scrollX + cam.width / 2;
+    const centerY = cam.scrollY + cam.height / 2;
+
+    // Background overlay
+    this.overlay = this.scene.add.rectangle(centerX, centerY, cam.width * 2, cam.height * 2, 0x000000, 0.6);
+    this.overlay.setDepth(199);
+
+    // Build main panel
+    this.panel = this.scene.rexUI.add.sizer({
+      x: centerX,
+      y: centerY,
+      orientation: 'y',
+      space: { left: 20, right: 20, top: 15, bottom: 15, item: 15 },
+    })
+      .addBackground(
+        this.scene.rexUI.add.roundRectangle(0, 0, 0, 0, 8, 0x1a1a2e, 0.95)
+          .setStrokeStyle(2, 0x8b5cf6)
+      )
+      .add(this.createHeader(), { expand: true })
+      .add(this.createMainContent(), { expand: true })
+      .add(this.createInstructions(), { align: 'center' })
+      .layout();
+
+    this.panel.setDepth(200);
+
+    // Update tooltip container position base
+    this.tooltipContainer.setPosition(centerX - 300, centerY - 200);
+
+    this.refresh();
+  }
+
+  private createHeader(): any {
+    const title = this.scene.add.text(0, 0, 'INVENTORY', {
       fontSize: '20px',
+      fontFamily: 'monospace',
       color: '#ffffff',
       fontStyle: 'bold',
     });
-    this.titleText.setOrigin(0.5);
-    this.container.add(this.titleText);
 
-    // Close button (X)
-    const closeBtn = this.scene.add.container(this.PANEL_WIDTH / 2 - 20, -this.PANEL_HEIGHT / 2 + 20);
-    const closeBg = this.scene.add.rectangle(0, 0, 24, 24, 0x4b5563);
-    closeBg.setStrokeStyle(1, 0x6b7280);
-    closeBtn.add(closeBg);
-    const closeX = this.scene.add.text(0, 0, 'X', {
-      fontSize: '14px',
-      color: '#ffffff',
+    const closeBtn = this.scene.add.text(0, 0, 'X', {
+      fontSize: '16px',
+      fontFamily: 'monospace',
+      color: '#9ca3af',
       fontStyle: 'bold',
     });
-    closeX.setOrigin(0.5);
-    closeBtn.add(closeX);
-    this.container.add(closeBtn);
+    closeBtn.setInteractive({ useHandCursor: true });
+    closeBtn.on('pointerover', () => closeBtn.setColor('#ef4444'));
+    closeBtn.on('pointerout', () => closeBtn.setColor('#9ca3af'));
+    closeBtn.on('pointerdown', () => this.hide());
 
-    closeBg.setInteractive({ useHandCursor: true });
-    closeBg.on('pointerover', () => closeBg.setFillStyle(0xef4444));
-    closeBg.on('pointerout', () => closeBg.setFillStyle(0x4b5563));
-    closeBg.on('pointerdown', () => this.toggle());
-
-    // Instructions
-    const instructions = this.scene.add.text(
-      0,
-      this.PANEL_HEIGHT / 2 - 25,
-      'Shift+Click: Equip/Use item | E or X: Close',
-      {
-        fontSize: '11px',
-        color: '#888888',
-      }
-    );
-    instructions.setOrigin(0.5);
-    this.container.add(instructions);
+    return this.scene.rexUI.add.sizer({ orientation: 'x' })
+      .add(title, { align: 'left' })
+      .addSpace()
+      .add(closeBtn, { align: 'right' });
   }
 
-  private createEquipmentSlots(): void {
-    const startX = -this.PANEL_WIDTH / 2 + 60;
-    const startY = -this.PANEL_HEIGHT / 2 + 70;
+  private createMainContent(): any {
+    return this.scene.rexUI.add.sizer({
+      orientation: 'x',
+      space: { item: 30 },
+    })
+      .add(this.createEquipmentPanel(), { align: 'top' })
+      .add(this.createInventoryGrid(), { align: 'top' });
+  }
+
+  private createEquipmentPanel(): any {
+    const sizer = this.scene.rexUI.add.sizer({
+      orientation: 'y',
+      space: { item: 10 },
+    });
 
     const slots = [
-      { key: 'weapon', label: 'Weapon', y: 0 },
-      { key: 'armor', label: 'Armor', y: 50 },
-      { key: 'accessory', label: 'Accessory', y: 100 },
+      { key: 'weapon', label: 'Weapon' },
+      { key: 'armor', label: 'Armor' },
+      { key: 'accessory', label: 'Accessory' },
     ];
 
-    slots.forEach((slot) => {
-      const slotContainer = this.scene.add.container(startX, startY + slot.y);
+    for (const slot of slots) {
+      sizer.add(this.createEquipmentSlot(slot.key, slot.label), { align: 'left' });
+    }
 
-      // Slot background
-      const bg = this.scene.add.rectangle(0, 0, this.SLOT_SIZE, this.SLOT_SIZE, 0x374151);
-      bg.setStrokeStyle(1, 0x6b7280);
-      slotContainer.add(bg);
-
-      // Label
-      const label = this.scene.add.text(this.SLOT_SIZE / 2 + 10, 0, slot.label, {
-        fontSize: '12px',
-        color: '#aaaaaa',
-      });
-      label.setOrigin(0, 0.5);
-      slotContainer.add(label);
-
-      // Item indicator (will be updated)
-      const itemIndicator = this.scene.add.rectangle(0, 0, this.SLOT_SIZE - 8, this.SLOT_SIZE - 8, 0x000000, 0);
-      itemIndicator.setName('indicator');
-      slotContainer.add(itemIndicator);
-
-      // Item name text
-      const itemText = this.scene.add.text(0, 0, '', {
-        fontSize: '10px',
-        color: '#ffffff',
-      });
-      itemText.setOrigin(0.5);
-      itemText.setName('itemText');
-      slotContainer.add(itemText);
-
-      this.equipmentSlots.set(slot.key, slotContainer);
-      this.container.add(slotContainer);
-
-      // Make interactive
-      bg.setInteractive({ useHandCursor: true });
-      bg.on('pointerover', () => {
-        const equipment = this.player.inventory.getEquipment();
-        const item = equipment[slot.key as keyof typeof equipment];
-        if (item) {
-          this.showTooltip(item, startX + this.SLOT_SIZE, startY + slot.y);
-        }
-        bg.setStrokeStyle(2, 0x8b5cf6);
-      });
-      bg.on('pointerout', () => {
-        this.hideTooltip();
-        bg.setStrokeStyle(1, 0x6b7280);
-      });
-      bg.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-        // Shift+click to unequip
-        if (pointer.event.shiftKey) {
-          this.player.inventory.unequipSlot(slot.key as 'weapon' | 'armor' | 'accessory');
-          this.player.recalculateStats();
-          this.refresh();
-        }
-      });
-    });
+    return sizer;
   }
 
-  private createInventoryGrid(): void {
-    const startX = -this.PANEL_WIDTH / 2 + 180;
-    const startY = -this.PANEL_HEIGHT / 2 + 70;
+  private createEquipmentSlot(key: string, label: string): any {
+    const bg = this.scene.rexUI.add.roundRectangle(0, 0, this.SLOT_SIZE, this.SLOT_SIZE, 4, 0x374151)
+      .setStrokeStyle(1, 0x6b7280);
+
+    const indicator = this.scene.rexUI.add.roundRectangle(0, 0, this.SLOT_SIZE - 8, this.SLOT_SIZE - 8, 2, 0x000000, 0);
+
+    const icon = this.scene.add.sprite(0, 0, 'item_drop');
+    icon.setScale(0.9);
+    icon.setVisible(false);
+
+    const slotLabel = this.scene.rexUI.add.label({
+      background: bg,
+      icon: icon,
+      align: 'center',
+    });
+
+    const labelText = this.scene.add.text(0, 0, label, {
+      fontSize: '12px',
+      fontFamily: 'monospace',
+      color: '#aaaaaa',
+    });
+
+    const row = this.scene.rexUI.add.sizer({
+      orientation: 'x',
+      space: { item: 10 },
+    })
+      .add(slotLabel, { align: 'center' })
+      .add(labelText, { align: 'center' });
+
+    this.equipmentSlots.set(key, { container: slotLabel, bg, icon, indicator });
+
+    // Make interactive
+    bg.setInteractive({ useHandCursor: true });
+    bg.on('pointerover', () => {
+      const equipment = this.player.inventory.getEquipment();
+      const item = equipment[key as keyof typeof equipment];
+      if (item) {
+        this.showTooltip(item, 100, 0);
+      }
+      bg.setStrokeStyle(2, 0x8b5cf6);
+    });
+    bg.on('pointerout', () => {
+      this.hideTooltip();
+      bg.setStrokeStyle(1, 0x6b7280);
+    });
+    bg.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (pointer.event.shiftKey) {
+        this.player.inventory.unequipSlot(key as 'weapon' | 'armor' | 'accessory');
+        this.player.recalculateStats();
+        this.refresh();
+      }
+    });
+
+    return row;
+  }
+
+  private createInventoryGrid(): any {
     const maxSlots = this.player.inventory.getMaxSlots();
+    const rows = Math.ceil(maxSlots / this.SLOTS_PER_ROW);
+
+    const gridSizer = this.scene.rexUI.add.gridSizer({
+      column: this.SLOTS_PER_ROW,
+      row: rows,
+      columnProportions: 0,
+      rowProportions: 0,
+      space: { column: 4, row: 4 },
+    });
 
     for (let i = 0; i < maxSlots; i++) {
-      const row = Math.floor(i / this.SLOTS_PER_ROW);
       const col = i % this.SLOTS_PER_ROW;
-      const x = startX + col * (this.SLOT_SIZE + 4);
-      const y = startY + row * (this.SLOT_SIZE + 4);
+      const row = Math.floor(i / this.SLOTS_PER_ROW);
 
-      const slotContainer = this.scene.add.container(x, y);
+      const bg = this.scene.rexUI.add.roundRectangle(0, 0, this.SLOT_SIZE, this.SLOT_SIZE, 4, 0x374151)
+        .setStrokeStyle(1, 0x6b7280);
 
-      // Slot background
-      const bg = this.scene.add.rectangle(0, 0, this.SLOT_SIZE, this.SLOT_SIZE, 0x374151);
-      bg.setStrokeStyle(1, 0x6b7280);
-      slotContainer.add(bg);
+      const indicator = this.scene.rexUI.add.roundRectangle(0, 0, this.SLOT_SIZE - 4, this.SLOT_SIZE - 4, 2, 0x000000, 0);
 
-      // Item indicator (rarity border)
-      const indicator = this.scene.add.rectangle(0, 0, this.SLOT_SIZE - 4, this.SLOT_SIZE - 4, 0x000000, 0);
-      indicator.setName('indicator');
-      slotContainer.add(indicator);
-
-      // Item icon sprite (hidden by default)
       const icon = this.scene.add.sprite(0, 0, 'item_drop');
-      icon.setName('icon');
-      icon.setVisible(false);
       icon.setScale(0.9);
-      slotContainer.add(icon);
+      icon.setVisible(false);
 
-      // Comparison indicator (up/down arrow)
       const compareIndicator = this.scene.add.text(
-        this.SLOT_SIZE / 2 - 2,
-        -this.SLOT_SIZE / 2 + 2,
+        this.SLOT_SIZE / 2 - 4,
+        -this.SLOT_SIZE / 2 + 4,
         '',
-        { fontSize: '12px', fontStyle: 'bold' }
+        { fontSize: '10px', fontFamily: 'monospace', fontStyle: 'bold' }
       );
-      compareIndicator.setName('compareIndicator');
       compareIndicator.setOrigin(1, 0);
-      slotContainer.add(compareIndicator);
+      compareIndicator.setVisible(false);
 
-      slotContainer.setData('index', i);
-      this.itemSlots.push(slotContainer);
-      this.container.add(slotContainer);
+      const slotContainer = this.scene.rexUI.add.overlapSizer({
+        width: this.SLOT_SIZE,
+        height: this.SLOT_SIZE,
+      })
+        .add(bg, { align: 'center', expand: false })
+        .add(indicator, { align: 'center', expand: false })
+        .add(icon, { align: 'center', expand: false })
+        .add(compareIndicator, { align: 'right-top', expand: false });
+
+      this.itemSlots.push({ container: slotContainer, bg, icon, indicator, compareIndicator });
+
+      gridSizer.add(slotContainer, { column: col, row: row, align: 'center' });
 
       // Make interactive
       bg.setInteractive({ useHandCursor: true });
@@ -229,20 +254,25 @@ export class InventoryUI {
         this.onSlotClick(i, pointer.event.shiftKey);
       });
     }
+
+    return gridSizer;
   }
 
-  private createTooltip(): void {
-    this.tooltipContainer = this.scene.add.container(0, 0);
-    this.tooltipContainer.setVisible(false);
-    this.container.add(this.tooltipContainer);
+  private createInstructions(): Phaser.GameObjects.Text {
+    return this.scene.add.text(0, 0, 'Shift+Click: Equip/Use | E or X: Close', {
+      fontSize: '11px',
+      fontFamily: 'monospace',
+      color: '#666666',
+    });
   }
 
   private onSlotHover(index: number): void {
     const items = this.player.inventory.getItems();
     if (index < items.length) {
       const item = items[index];
-      const slot = this.itemSlots[index];
-      this.showTooltip(item, slot.x + this.SLOT_SIZE, slot.y);
+      const col = index % this.SLOTS_PER_ROW;
+      const row = Math.floor(index / this.SLOTS_PER_ROW);
+      this.showTooltip(item, 150 + col * (this.SLOT_SIZE + 4), row * (this.SLOT_SIZE + 4));
     }
   }
 
@@ -253,12 +283,9 @@ export class InventoryUI {
     const item = items[index];
 
     if (shiftKey) {
-      // Shift+click: equip or use
       if (item.type === ItemType.CONSUMABLE) {
-        // Use consumable
         this.player.useItem(item.id);
       } else {
-        // Equip item
         this.player.equipItem(item.id);
       }
       this.refresh();
@@ -271,11 +298,10 @@ export class InventoryUI {
     const padding = 10;
     const width = 180;
 
-    // Build tooltip content
     const lines: { text: string; color: string }[] = [];
     lines.push({ text: item.name, color: this.getRarityColorHex(item.rarity) });
     lines.push({ text: this.getItemTypeLabel(item.type), color: '#888888' });
-    lines.push({ text: '', color: '#ffffff' }); // Spacer
+    lines.push({ text: '', color: '#ffffff' });
 
     if (item.stats.attack) lines.push({ text: `+${item.stats.attack} Attack`, color: '#ff6666' });
     if (item.stats.defense) lines.push({ text: `+${item.stats.defense} Defense`, color: '#6666ff' });
@@ -286,11 +312,10 @@ export class InventoryUI {
     }
     if (item.healAmount) lines.push({ text: `Heals ${item.healAmount} HP`, color: '#66ff66' });
 
-    lines.push({ text: '', color: '#ffffff' }); // Spacer
-    lines.push({ text: item.description, color: '#aaaaaa' });
-
-    // Add shift+click hint
     lines.push({ text: '', color: '#ffffff' });
+    lines.push({ text: item.description, color: '#aaaaaa' });
+    lines.push({ text: '', color: '#ffffff' });
+
     if (item.type === ItemType.CONSUMABLE) {
       lines.push({ text: 'Shift+Click to use', color: '#666666' });
     } else {
@@ -299,18 +324,17 @@ export class InventoryUI {
 
     const height = lines.length * 16 + padding * 2;
 
-    // Background
     const bg = this.scene.add.rectangle(0, 0, width, height, 0x1f2937, 0.95);
     bg.setStrokeStyle(1, RARITY_COLORS[item.rarity]);
     bg.setOrigin(0, 0);
     this.tooltipContainer.add(bg);
 
-    // Text lines
     let yOffset = padding;
     lines.forEach((line) => {
       if (line.text) {
         const text = this.scene.add.text(padding, yOffset, line.text, {
           fontSize: '11px',
+          fontFamily: 'monospace',
           color: line.color,
           wordWrap: { width: width - padding * 2 },
         });
@@ -319,20 +343,12 @@ export class InventoryUI {
       yOffset += 16;
     });
 
-    // Position tooltip, keeping it on screen
-    let tooltipX = x + 10;
-    let tooltipY = y - height / 2;
+    // Position tooltip relative to panel
+    const cam = this.scene.cameras.main;
+    const panelX = cam.scrollX + cam.width / 2;
+    const panelY = cam.scrollY + cam.height / 2;
 
-    // Clamp to panel bounds
-    const maxX = this.PANEL_WIDTH / 2 - width - 10;
-    const minY = -this.PANEL_HEIGHT / 2 + 10;
-    const maxY = this.PANEL_HEIGHT / 2 - height - 10;
-
-    if (tooltipX > maxX) tooltipX = x - width - 20;
-    if (tooltipY < minY) tooltipY = minY;
-    if (tooltipY > maxY) tooltipY = maxY;
-
-    this.tooltipContainer.setPosition(tooltipX, tooltipY);
+    this.tooltipContainer.setPosition(panelX - 280 + x, panelY - 180 + y);
     this.tooltipContainer.setVisible(true);
   }
 
@@ -360,8 +376,6 @@ export class InventoryUI {
     return labels[type];
   }
 
-  // Compare item to currently equipped item of same type
-  // Returns: 1 = better, -1 = worse, 0 = same/not comparable
   private compareToEquipped(item: Item): number {
     if (item.type === ItemType.CONSUMABLE) return 0;
 
@@ -380,10 +394,8 @@ export class InventoryUI {
         break;
     }
 
-    // If nothing equipped, this item is better
     if (!equippedItem) return 1;
 
-    // Calculate total stat value for comparison
     const itemValue = this.getItemStatValue(item);
     const equippedValue = this.getItemStatValue(equippedItem);
 
@@ -394,7 +406,6 @@ export class InventoryUI {
 
   private getItemStatValue(item: Item): number {
     let value = 0;
-    // Weight stats by importance
     if (item.stats.attack) value += item.stats.attack * 2;
     if (item.stats.defense) value += item.stats.defense * 2;
     if (item.stats.maxHp) value += item.stats.maxHp * 0.5;
@@ -403,7 +414,6 @@ export class InventoryUI {
   }
 
   private getItemTexture(item: Item): string {
-    // Weapons with weaponData use their specific weapon texture
     if (item.type === ItemType.WEAPON && item.weaponData) {
       const weaponTextures: Record<string, string> = {
         wand: 'weapon_wand',
@@ -415,7 +425,6 @@ export class InventoryUI {
       return weaponTextures[item.weaponData.weaponType] || 'weapon_wand';
     }
 
-    // Other items use generic type icons
     const typeTextures: Record<ItemType, string> = {
       [ItemType.WEAPON]: 'weapon_sword',
       [ItemType.ARMOR]: 'item_armor',
@@ -426,101 +435,96 @@ export class InventoryUI {
   }
 
   refresh(): void {
-    // Guard against refreshing after scene restart
-    if (!this.container || !this.container.scene) return;
+    if (!this.panel || !this.isVisible) return;
 
     const items = this.player.inventory.getItems();
     const equipment = this.player.inventory.getEquipment();
 
     // Update inventory slots
     this.itemSlots.forEach((slot, index) => {
-      const indicator = slot.getByName('indicator') as Phaser.GameObjects.Rectangle;
-      const icon = slot.getByName('icon') as Phaser.GameObjects.Sprite;
-      const compareIndicator = slot.getByName('compareIndicator') as Phaser.GameObjects.Text;
-      if (!indicator || !icon) return;
-
       if (index < items.length) {
         const item = items[index];
-        // Show rarity-colored border
-        indicator.setStrokeStyle(2, RARITY_COLORS[item.rarity]);
-        indicator.setFillStyle(0x000000, 0.3);
-        // Show item icon
-        icon.setTexture(this.getItemTexture(item));
-        icon.setTint(RARITY_COLORS[item.rarity]);
-        icon.setVisible(true);
+        slot.indicator.setStrokeStyle(2, RARITY_COLORS[item.rarity]);
+        slot.indicator.setFillStyle(0x000000, 0.3);
+        slot.icon.setTexture(this.getItemTexture(item));
+        slot.icon.setTint(RARITY_COLORS[item.rarity]);
+        slot.icon.setVisible(true);
 
-        // Show comparison indicator for equippable items
-        if (compareIndicator) {
-          const comparison = this.compareToEquipped(item);
-          if (comparison > 0) {
-            compareIndicator.setText('▲');
-            compareIndicator.setColor('#22cc22');
-            compareIndicator.setVisible(true);
-          } else if (comparison < 0) {
-            compareIndicator.setText('▼');
-            compareIndicator.setColor('#ff4444');
-            compareIndicator.setVisible(true);
-          } else {
-            compareIndicator.setVisible(false);
-          }
+        const comparison = this.compareToEquipped(item);
+        if (comparison > 0) {
+          slot.compareIndicator.setText('▲');
+          slot.compareIndicator.setColor('#22cc22');
+          slot.compareIndicator.setVisible(true);
+        } else if (comparison < 0) {
+          slot.compareIndicator.setText('▼');
+          slot.compareIndicator.setColor('#ff4444');
+          slot.compareIndicator.setVisible(true);
+        } else {
+          slot.compareIndicator.setVisible(false);
         }
       } else {
-        indicator.setStrokeStyle(0);
-        indicator.setFillStyle(0x000000, 0);
-        icon.setVisible(false);
-        if (compareIndicator) compareIndicator.setVisible(false);
+        slot.indicator.setStrokeStyle(0);
+        slot.indicator.setFillStyle(0x000000, 0);
+        slot.icon.setVisible(false);
+        slot.compareIndicator.setVisible(false);
       }
     });
 
     // Update equipment slots
     const equipmentTypes = ['weapon', 'armor', 'accessory'] as const;
     equipmentTypes.forEach((type) => {
-      const slotContainer = this.equipmentSlots.get(type);
-      if (!slotContainer) return;
-
-      const indicator = slotContainer.getByName('indicator') as Phaser.GameObjects.Rectangle;
-      const itemText = slotContainer.getByName('itemText') as Phaser.GameObjects.Text;
-      let icon = slotContainer.getByName('equipIcon') as Phaser.GameObjects.Sprite;
-      if (!indicator || !itemText) return;
+      const slot = this.equipmentSlots.get(type);
+      if (!slot) return;
 
       const item = equipment[type];
 
       if (item) {
-        indicator.setStrokeStyle(2, RARITY_COLORS[item.rarity]);
-        indicator.setFillStyle(0x000000, 0.3);
-        itemText.setText('');
-
-        // Create or update equipment icon
-        if (!icon) {
-          icon = this.scene.add.sprite(0, 0, this.getItemTexture(item));
-          icon.setName('equipIcon');
-          icon.setScale(0.9);
-          slotContainer.add(icon);
+        slot.indicator.setStrokeStyle(2, RARITY_COLORS[item.rarity]);
+        slot.indicator.setFillStyle(0x000000, 0.3);
+        if (slot.icon) {
+          slot.icon.setTexture(this.getItemTexture(item));
+          slot.icon.setTint(RARITY_COLORS[item.rarity]);
+          slot.icon.setVisible(true);
         }
-        icon.setTexture(this.getItemTexture(item));
-        icon.setTint(RARITY_COLORS[item.rarity]);
-        icon.setVisible(true);
       } else {
-        indicator.setStrokeStyle(0);
-        indicator.setFillStyle(0x000000, 0);
-        itemText.setText('');
-        if (icon) icon.setVisible(false);
+        slot.indicator.setStrokeStyle(0);
+        slot.indicator.setFillStyle(0x000000, 0);
+        if (slot.icon) slot.icon.setVisible(false);
       }
     });
   }
 
-  toggle(): void {
-    this.isVisible = !this.isVisible;
+  hide(): void {
+    if (!this.panel) return;
 
-    if (this.isVisible) {
-      this.updatePosition();
-      this.refresh();
+    if (this.panel) {
+      this.panel.destroy();
+      this.panel = null;
     }
+    if (this.overlay) {
+      this.overlay.destroy();
+      this.overlay = null;
+    }
+    this.hideTooltip();
+    this.isVisible = false;
+  }
 
-    this.container.setVisible(this.isVisible);
+  toggle(): void {
+    if (this.isVisible) {
+      this.hide();
+    } else {
+      this.show();
+    }
   }
 
   getIsVisible(): boolean {
     return this.isVisible;
+  }
+
+  destroy(): void {
+    this.hide();
+    if (this.tooltipContainer) {
+      this.tooltipContainer.destroy();
+    }
   }
 }

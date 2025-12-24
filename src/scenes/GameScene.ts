@@ -1246,6 +1246,10 @@ export class GameScene extends Phaser.Scene {
     if (!this.input.keyboard) return;
 
     this.input.keyboard.on('keydown-E', () => {
+      // Don't open inventory if another menu is open
+      if (this.settingsUI.getIsVisible() || this.levelUpUI.getIsVisible()) {
+        return;
+      }
       this.inventoryUI.toggle();
       if (this.inventoryUI.getIsVisible()) {
         this.player.setVelocity(0, 0);
@@ -1268,7 +1272,10 @@ export class GameScene extends Phaser.Scene {
 
     // L: Open character / stat allocation menu
     this.input.keyboard.on('keydown-L', () => {
-      if (this.inventoryUI.getIsVisible()) return;
+      // Don't open levelup if another menu is open
+      if (this.inventoryUI.getIsVisible() || this.settingsUI.getIsVisible()) {
+        return;
+      }
 
       if (this.levelUpUI.getIsVisible()) {
         this.levelUpUI.hide();
@@ -1280,7 +1287,7 @@ export class GameScene extends Phaser.Scene {
 
     // Q: Interact with nearby lore objects
     this.input.keyboard.on('keydown-Q', () => {
-      if (this.inventoryUI.getIsVisible() || this.levelUpUI.getIsVisible()) return;
+      if (this.inventoryUI.getIsVisible() || this.levelUpUI.getIsVisible() || this.settingsUI.getIsVisible()) return;
       if (this.activeLoreModal) {
         // Close modal if open
         this.activeLoreModal.destroy();
