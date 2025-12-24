@@ -1,12 +1,17 @@
 import Phaser from 'phaser';
 import { SaveSystem } from '../systems/SaveSystem';
+import { SettingsUI } from '../ui/SettingsUI';
 
 export class MenuScene extends Phaser.Scene {
+  private settingsUI!: SettingsUI;
+
   constructor() {
     super({ key: 'MenuScene' });
   }
 
   create(): void {
+    // Create settings UI first (so it's available for the button)
+    this.settingsUI = new SettingsUI(this);
     const width = this.cameras.main.width;
     const height = this.cameras.main.height;
 
@@ -32,8 +37,13 @@ export class MenuScene extends Phaser.Scene {
     });
     subtitle.setOrigin(0.5);
 
+    // Settings button
+    this.createButton(width / 2, height * 0.55, 'Settings', () => {
+      this.settingsUI.show();
+    });
+
     // New Game button
-    this.createButton(width / 2, height * 0.6, 'New Game', () => {
+    this.createButton(width / 2, height * 0.65, 'New Game', () => {
       SaveSystem.deleteSave();
       this.registry.set('floor', 1);
       this.scene.start('GameScene');
@@ -42,14 +52,14 @@ export class MenuScene extends Phaser.Scene {
     // Continue button (only if save exists)
     const saveInfo = SaveSystem.getSaveInfo();
     if (saveInfo) {
-      this.createButton(width / 2, height * 0.7, 'Continue', () => {
+      this.createButton(width / 2, height * 0.75, 'Continue', () => {
         // Set floor before starting so enemies spawn correctly
         this.registry.set('floor', saveInfo.floor);
         this.scene.start('GameScene');
       });
 
       // Show save info
-      const saveText = this.add.text(width / 2, height * 0.76,
+      const saveText = this.add.text(width / 2, height * 0.81,
         `Stage ${saveInfo.floor} | Level ${saveInfo.level}`, {
         fontSize: '14px',
         fontFamily: 'monospace',

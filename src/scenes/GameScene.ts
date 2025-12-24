@@ -12,6 +12,7 @@ import { ItemRarity } from '../systems/Item';
 import { InventoryUI } from '../ui/InventoryUI';
 import { MinimapUI } from '../ui/MinimapUI';
 import { LevelUpUI } from '../ui/LevelUpUI';
+import { SettingsUI } from '../ui/SettingsUI';
 import { RoomManager } from '../systems/RoomManager';
 import { HazardSystem } from '../systems/HazardSystem';
 import { Weapon } from '../systems/Weapon';
@@ -41,6 +42,7 @@ export class GameScene extends Phaser.Scene {
   private inventoryUI!: InventoryUI;
   private minimapUI!: MinimapUI;
   private levelUpUI!: LevelUpUI;
+  private settingsUI!: SettingsUI;
   private roomManager!: RoomManager;
   private hazardSystem!: HazardSystem;
   private loreSystem!: LoreSystem;
@@ -161,6 +163,7 @@ export class GameScene extends Phaser.Scene {
     this.inventoryUI = new InventoryUI(this, this.player);
     this.minimapUI = new MinimapUI(this, this.dungeon);
     this.levelUpUI = new LevelUpUI(this, this.player);
+    this.settingsUI = new SettingsUI(this, this.audioSystem);
     this.createHUD();
     this.createLorePrompt();
 
@@ -174,7 +177,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number): void {
-    if (this.inventoryUI.getIsVisible() || this.levelUpUI.getIsVisible()) return;
+    if (this.inventoryUI.getIsVisible() || this.levelUpUI.getIsVisible() || this.settingsUI.getIsVisible()) return;
 
     // Reset speed modifier each frame (will be reapplied by SlothEnemy if in range)
     this.player.resetSpeedModifier();
@@ -1250,10 +1253,16 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.input.keyboard.on('keydown-ESC', () => {
-      if (this.levelUpUI.getIsVisible()) {
+      if (this.settingsUI.getIsVisible()) {
+        this.settingsUI.hide();
+      } else if (this.levelUpUI.getIsVisible()) {
         this.levelUpUI.hide();
       } else if (this.inventoryUI.getIsVisible()) {
         this.inventoryUI.toggle();
+      } else {
+        // Open settings if nothing else is open
+        this.player.setVelocity(0, 0);
+        this.settingsUI.show();
       }
     });
 

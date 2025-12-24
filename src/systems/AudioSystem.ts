@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { SettingsManager } from './SettingsManager';
 
 export type MusicStyle = 'exploration' | 'shrine' | 'combat';
 
@@ -28,7 +29,16 @@ export class AudioSystem {
   private currentStyle: MusicStyle = 'exploration';
   private currentNoteIndex: number = 0;
 
+  // Volume controls (0-1)
+  private masterVolume: number;
+  private musicVolume: number;
+  private sfxVolume: number;
+
   constructor(_scene: Phaser.Scene) {
+    // Load volumes from settings
+    this.masterVolume = SettingsManager.getMasterVolume();
+    this.musicVolume = SettingsManager.getMusicVolume();
+    this.sfxVolume = SettingsManager.getSFXVolume();
     this.initAudio();
   }
 
@@ -156,7 +166,8 @@ export class AudioSystem {
     const gainNode = this.audioContext.createGain();
 
     source.buffer = buffer;
-    gainNode.gain.value = volume;
+    // Apply master and SFX volume
+    gainNode.gain.value = volume * this.masterVolume * this.sfxVolume;
 
     source.connect(gainNode);
     gainNode.connect(this.audioContext.destination);
@@ -237,6 +248,10 @@ export class AudioSystem {
     // The next scheduled note will pick up the new style parameters
   }
 
+  private getEffectiveMusicVolume(): number {
+    return this.masterVolume * this.musicVolume;
+  }
+
   private createDrone(): void {
     if (!this.audioContext) return;
 
@@ -247,8 +262,9 @@ export class AudioSystem {
     this.droneOscillator.type = 'sine';
     this.droneOscillator.frequency.value = 110; // Low A
 
-    // Set initial volume based on style
-    const droneVolume = this.currentStyle === 'shrine' ? 0.06 : 0.08;
+    // Set initial volume based on style, scaled by music volume
+    const baseVolume = this.currentStyle === 'shrine' ? 0.06 : 0.08;
+    const droneVolume = baseVolume * this.getEffectiveMusicVolume();
     this.droneGain.gain.value = 0;
 
     this.droneOscillator.connect(this.droneGain);
@@ -343,6 +359,9 @@ export class AudioSystem {
   private playMelodyNote(): void {
     if (!this.audioContext) return;
 
+    // Don't play if music volume is 0
+    if (this.getEffectiveMusicVolume() === 0) return;
+
     const frequency = DORIAN_SCALE[this.currentNoteIndex];
 
     // Create new oscillator for this note
@@ -352,20 +371,21 @@ export class AudioSystem {
     osc.type = 'sine';
     osc.frequency.value = frequency;
 
-    // Volume based on style
-    let noteVolume: number;
+    // Volume based on style, scaled by music volume
+    let baseVolume: number;
     switch (this.currentStyle) {
       case 'combat':
-        noteVolume = 0.15;
+        baseVolume = 0.15;
         break;
       case 'shrine':
-        noteVolume = 0.10;
+        baseVolume = 0.10;
         break;
       case 'exploration':
       default:
-        noteVolume = 0.12;
+        baseVolume = 0.12;
         break;
     }
+    const noteVolume = baseVolume * this.getEffectiveMusicVolume();
 
     const now = this.audioContext.currentTime;
 
@@ -391,5 +411,66 @@ export class AudioSystem {
 
   isMusicPlaying(): boolean {
     return this.isPlayingMusic;
+  }
+
+  // Volume control methods
+  setMasterVolume(value: number): void {
+    this.masterVolume = Math.max(0, Math.min(1, value));
+    SettingsManager.setMasterVolume(this.masterVolume);
+    this.updateDroneVolume();
+  }
+
+  setMusicVolume(value: number): void {
+    this.musicVolume = Math.max(0, Math.min(1, value));
+    SettingsManager.setMusicVolume(this.musicVolume);
+    this.updateDroneVolume();
+  }
+
+  setSFXVolume(value: number): void {
+    this.sfxVolume = Math.max(0, Math.min(1, value));
+    SettingsManager.setSFXVolume(this.sfxVolume);
+  }
+
+  getMasterVolume(): number {
+    return this.masterVolume;
+  }
+
+  getMusicVolume(): number {
+    return this.musicVolume;
+  }
+
+  getSFXVolume(): number {
+    return this.sfxVolume;
+  }
+
+  private updateDroneVolume(): void {
+    if (!this.audioContext) return;
+
+    const effectiveVolume = this.getEffectiveMusicVolume();
+
+    // If volume is 0, stop the drone entirely
+    if (effectiveVolume === 0) {
+      if (this.droneOscillator) {
+        this.droneOscillator.stop();
+        this.droneOscillator = null;
+        this.droneGain = null;
+      }
+      return;
+    }
+
+    // If drone was stopped but volume is now > 0, restart it
+    if (!this.droneOscillator && this.isPlayingMusic) {
+      this.createDrone();
+      return;
+    }
+
+    if (this.droneGain) {
+      const baseVolume = this.currentStyle === 'shrine' ? 0.06 : 0.08;
+      const droneVolume = baseVolume * effectiveVolume;
+      const now = this.audioContext.currentTime;
+      // Cancel any scheduled ramps and set new value
+      this.droneGain.gain.cancelScheduledValues(now);
+      this.droneGain.gain.setValueAtTime(droneVolume, now);
+    }
   }
 }
