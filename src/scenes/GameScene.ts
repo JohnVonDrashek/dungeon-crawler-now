@@ -13,6 +13,7 @@ import { InventoryUI } from '../ui/InventoryUI';
 import { MinimapUI } from '../ui/MinimapUI';
 import { LevelUpUI } from '../ui/LevelUpUI';
 import { RoomManager } from '../systems/RoomManager';
+import { HazardSystem } from '../systems/HazardSystem';
 
 export class GameScene extends Phaser.Scene {
   private player!: Player;
@@ -32,6 +33,7 @@ export class GameScene extends Phaser.Scene {
   private minimapUI!: MinimapUI;
   private levelUpUI!: LevelUpUI;
   private roomManager!: RoomManager;
+  private hazardSystem!: HazardSystem;
   private floor: number = 1;
   private canExit: boolean = true;
   private isBossFloor: boolean = false;
@@ -81,6 +83,10 @@ export class GameScene extends Phaser.Scene {
     // Create room manager for door/room mechanics
     this.roomManager = new RoomManager(this, this.dungeon);
 
+    // Create hazard system
+    this.hazardSystem = new HazardSystem(this, this.player, this.floor);
+    this.hazardSystem.setRoomManager(this.roomManager);
+
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
     this.cameras.main.setBounds(0, 0, DUNGEON_WIDTH * TILE_SIZE, DUNGEON_HEIGHT * TILE_SIZE);
 
@@ -113,6 +119,7 @@ export class GameScene extends Phaser.Scene {
     const enteredRoom = this.roomManager.update(this.player.x, this.player.y);
     if (enteredRoom) {
       this.spawnEnemiesInRoom(enteredRoom);
+      this.hazardSystem.spawnHazardsInRoom(enteredRoom, this.dungeon);
     }
 
     this.enemies.getChildren().forEach((child) => {
@@ -122,6 +129,9 @@ export class GameScene extends Phaser.Scene {
         this.updateHealthBar(enemy);
       }
     });
+
+    // Update hazards
+    this.hazardSystem.update(delta);
 
     this.minimapUI.update(this.player.x, this.player.y);
     this.updateHUD();
@@ -382,6 +392,13 @@ export class GameScene extends Phaser.Scene {
     // Door collision
     this.physics.add.collider(this.player, this.roomManager.getDoorGroup());
     this.physics.add.collider(this.enemies, this.roomManager.getDoorGroup());
+
+    // Hazard arrow collision with walls
+    this.physics.add.collider(
+      this.hazardSystem.getArrowGroup(), this.wallLayer,
+      this.handleProjectileWallCollision as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
+      undefined, this
+    );
   }
 
   private handlePlayerEnemyCollision(
@@ -613,6 +630,15 @@ export class GameScene extends Phaser.Scene {
         this.audioSystem.play('sfx_hurt', 0.4);
         this.shakeCamera(5, 100);
         this.showDamageNumber(target.x, target.y, result.damage, true);
+      }
+    });
+
+    // Hazard damage event
+    this.events.on('hazardDamage', (damage: number, _source: string) => {
+      if (!this.devMode) {
+        this.audioSystem.play('sfx_hurt', 0.3);
+        this.shakeCamera(3, 80);
+        this.showDamageNumber(this.player.x, this.player.y, damage, true);
       }
     });
 

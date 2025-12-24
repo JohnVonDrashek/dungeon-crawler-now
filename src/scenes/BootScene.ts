@@ -151,5 +151,76 @@ export class BootScene extends Phaser.Scene {
     doorGraphics.fillCircle(TILE_SIZE - 4, TILE_SIZE / 2, 2);
     doorGraphics.generateTexture('door', TILE_SIZE, TILE_SIZE);
     doorGraphics.destroy();
+
+    // === HAZARDS ===
+
+    // Spike trap (gray base with spikes)
+    const spikeGraphics = this.make.graphics({ x: 0, y: 0 });
+    spikeGraphics.fillStyle(0x4b5563);
+    spikeGraphics.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+    spikeGraphics.fillStyle(0x9ca3af);
+    // Draw spike triangles
+    const spikeSize = 4;
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 3; j++) {
+        const sx = 2 + i * 5;
+        const sy = 2 + j * 5;
+        spikeGraphics.fillTriangle(sx, sy + spikeSize, sx + spikeSize / 2, sy, sx + spikeSize, sy + spikeSize);
+      }
+    }
+    spikeGraphics.generateTexture('spike_trap', TILE_SIZE, TILE_SIZE);
+    spikeGraphics.destroy();
+
+    // Spike trap (active/extended state)
+    const spikeActiveGraphics = this.make.graphics({ x: 0, y: 0 });
+    spikeActiveGraphics.fillStyle(0x4b5563);
+    spikeActiveGraphics.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+    spikeActiveGraphics.fillStyle(0xd1d5db);
+    for (let i = 0; i < 3; i++) {
+      for (let j = 0; j < 3; j++) {
+        const sx = 1 + i * 5;
+        const sy = 1 + j * 5;
+        spikeActiveGraphics.fillTriangle(sx, sy + 5, sx + 2.5, sy - 1, sx + 5, sy + 5);
+      }
+    }
+    spikeActiveGraphics.lineStyle(1, 0xef4444);
+    spikeActiveGraphics.strokeRect(0, 0, TILE_SIZE, TILE_SIZE);
+    spikeActiveGraphics.generateTexture('spike_trap_active', TILE_SIZE, TILE_SIZE);
+    spikeActiveGraphics.destroy();
+
+    // Lava pit (orange/red bubbling)
+    const lavaGraphics = this.make.graphics({ x: 0, y: 0 });
+    lavaGraphics.fillStyle(0xdc2626);
+    lavaGraphics.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+    lavaGraphics.fillStyle(0xf97316);
+    lavaGraphics.fillCircle(4, 4, 3);
+    lavaGraphics.fillCircle(12, 8, 2);
+    lavaGraphics.fillCircle(6, 12, 2);
+    lavaGraphics.fillCircle(14, 14, 3);
+    lavaGraphics.fillStyle(0xfbbf24);
+    lavaGraphics.fillCircle(4, 4, 1);
+    lavaGraphics.fillCircle(14, 14, 1);
+    lavaGraphics.generateTexture('lava_pit', TILE_SIZE, TILE_SIZE);
+    lavaGraphics.destroy();
+
+    // Arrow shooter (wall-mounted, facing right by default)
+    const arrowShooterGraphics = this.make.graphics({ x: 0, y: 0 });
+    arrowShooterGraphics.fillStyle(0x6b7280);
+    arrowShooterGraphics.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+    arrowShooterGraphics.fillStyle(0x1f2937);
+    arrowShooterGraphics.fillRect(TILE_SIZE - 6, TILE_SIZE / 2 - 3, 6, 6);
+    arrowShooterGraphics.fillStyle(0xef4444);
+    arrowShooterGraphics.fillCircle(4, TILE_SIZE / 2, 3);
+    arrowShooterGraphics.generateTexture('arrow_shooter', TILE_SIZE, TILE_SIZE);
+    arrowShooterGraphics.destroy();
+
+    // Arrow projectile
+    const arrowGraphics = this.make.graphics({ x: 0, y: 0 });
+    arrowGraphics.fillStyle(0x78350f);
+    arrowGraphics.fillRect(0, 2, 8, 2);
+    arrowGraphics.fillStyle(0x9ca3af);
+    arrowGraphics.fillTriangle(8, 0, 12, 3, 8, 6);
+    arrowGraphics.generateTexture('arrow', 12, 6);
+    arrowGraphics.destroy();
   }
 }
