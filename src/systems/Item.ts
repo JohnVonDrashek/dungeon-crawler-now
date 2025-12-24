@@ -19,6 +19,13 @@ export interface ItemStats {
   speed?: number;
 }
 
+import { Weapon, WeaponType } from './Weapon';
+
+export interface WeaponData {
+  weaponType: WeaponType;
+  rarity: number;
+}
+
 export interface Item {
   id: string;
   name: string;
@@ -27,6 +34,7 @@ export interface Item {
   stats: ItemStats;
   description: string;
   healAmount?: number; // For consumables
+  weaponData?: WeaponData; // For weapon items with attack patterns
 }
 
 // Color mapping for rarity
@@ -39,36 +47,6 @@ export const RARITY_COLORS: Record<ItemRarity, number> = {
 
 // Item templates
 export const ITEM_TEMPLATES: Record<string, Omit<Item, 'id'>> = {
-  // Weapons
-  rusty_sword: {
-    name: 'Rusty Sword',
-    type: ItemType.WEAPON,
-    rarity: ItemRarity.COMMON,
-    stats: { attack: 3 },
-    description: 'A worn blade, but still sharp.',
-  },
-  iron_sword: {
-    name: 'Iron Sword',
-    type: ItemType.WEAPON,
-    rarity: ItemRarity.UNCOMMON,
-    stats: { attack: 6 },
-    description: 'A reliable iron blade.',
-  },
-  flame_blade: {
-    name: 'Flame Blade',
-    type: ItemType.WEAPON,
-    rarity: ItemRarity.RARE,
-    stats: { attack: 10 },
-    description: 'Burns with eternal fire.',
-  },
-  doom_cleaver: {
-    name: 'Doom Cleaver',
-    type: ItemType.WEAPON,
-    rarity: ItemRarity.EPIC,
-    stats: { attack: 15, speed: 10 },
-    description: 'Forged in the abyss.',
-  },
-
   // Armor
   leather_armor: {
     name: 'Leather Armor',
@@ -160,9 +138,7 @@ export function createItem(templateId: string): Item | null {
   };
 }
 
-// Procedural item generation
-const WEAPON_PREFIXES = ['Rusty', 'Iron', 'Steel', 'Enchanted', 'Cursed', 'Ancient', 'Blessed', 'Dark'];
-const WEAPON_TYPES = ['Sword', 'Dagger', 'Axe', 'Mace', 'Spear', 'Blade', 'Cleaver'];
+// Procedural item generation (weapons are generated separately via Weapon system)
 const ARMOR_PREFIXES = ['Tattered', 'Leather', 'Chain', 'Plate', 'Mystic', 'Dragon', 'Shadow'];
 const ARMOR_TYPES = ['Armor', 'Mail', 'Vest', 'Cuirass', 'Guard', 'Plate'];
 const ACCESSORY_PREFIXES = ['Wooden', 'Silver', 'Golden', 'Crystal', 'Arcane', 'Blessed'];
@@ -191,7 +167,8 @@ function randomRange(min: number, max: number): number {
 }
 
 export function generateProceduralItem(floor: number, rarity: ItemRarity): Item {
-  const types = [ItemType.WEAPON, ItemType.ARMOR, ItemType.ACCESSORY];
+  // Weapons are generated separately via the Weapon system
+  const types = [ItemType.ARMOR, ItemType.ACCESSORY];
   const type = randomPick(types);
 
   return generateProceduralItemOfType(floor, rarity, type);
@@ -207,27 +184,6 @@ export function generateProceduralItemOfType(floor: number, rarity: ItemRarity, 
   let description: string;
 
   switch (type) {
-    case ItemType.WEAPON: {
-      const prefix = randomPick(WEAPON_PREFIXES);
-      const weaponType = randomPick(WEAPON_TYPES);
-      name = `${prefix} ${weaponType}`;
-
-      // Primary stat: attack
-      const baseAttack = randomRange(2, 5) + floorBonus;
-      stats.attack = Math.floor(baseAttack * multiplier);
-
-      // Bonus stats based on rarity
-      if (bonusStats >= 1 && Math.random() > 0.5) {
-        stats.speed = randomRange(5, 15);
-      }
-      if (bonusStats >= 2 && Math.random() > 0.5) {
-        stats.maxHp = randomRange(5, 15);
-      }
-
-      description = `A ${rarity} weapon. ATK +${stats.attack}`;
-      break;
-    }
-
     case ItemType.ARMOR: {
       const prefix = randomPick(ARMOR_PREFIXES);
       const armorType = randomPick(ARMOR_TYPES);
@@ -301,4 +257,50 @@ export function generateProceduralItemOfType(floor: number, rarity: ItemRarity, 
     stats,
     description,
   };
+}
+
+// Convert a Weapon to an Item for inventory
+export function createItemFromWeapon(weapon: Weapon): Item {
+  const rarityMap: ItemRarity[] = [
+    ItemRarity.COMMON,
+    ItemRarity.UNCOMMON,
+    ItemRarity.RARE,
+    ItemRarity.EPIC,
+    ItemRarity.EPIC, // Legendary maps to Epic (highest)
+  ];
+
+  const rarity = rarityMap[weapon.rarity] || ItemRarity.COMMON;
+  const damageBonus = Math.floor(weapon.getDamageMultiplier() * 5);
+
+  return {
+    id: `item_${itemIdCounter++}`,
+    name: weapon.getDisplayName(),
+    type: ItemType.WEAPON,
+    rarity,
+    stats: {
+      attack: damageBonus,
+    },
+    description: `${weapon.stats.name} - ${getWeaponDescription(weapon.stats.type)}`,
+    weaponData: {
+      weaponType: weapon.stats.type,
+      rarity: weapon.rarity,
+    },
+  };
+}
+
+function getWeaponDescription(type: WeaponType): string {
+  switch (type) {
+    case WeaponType.WAND:
+      return 'Fires magic projectiles';
+    case WeaponType.SWORD:
+      return 'Powerful melee arc attack';
+    case WeaponType.BOW:
+      return 'Piercing long-range shots';
+    case WeaponType.STAFF:
+      return 'Explosive magic orbs';
+    case WeaponType.DAGGERS:
+      return 'Rapid triple-shot attack';
+    default:
+      return 'A mysterious weapon';
+  }
 }

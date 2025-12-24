@@ -47,10 +47,34 @@ export class BootScene extends Phaser.Scene {
   }
 
   private createPlaceholderAssets(): void {
-    // Player sprite (16x16 purple square)
+    // Player sprite (adventurer character)
     const playerGraphics = this.make.graphics({ x: 0, y: 0 });
-    playerGraphics.fillStyle(0x8b5cf6);
-    playerGraphics.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+    // Body (blue tunic)
+    playerGraphics.fillStyle(0x3b82f6);
+    playerGraphics.fillRect(4, 6, 8, 7);
+    // Head (skin tone)
+    playerGraphics.fillStyle(0xfcd9b6);
+    playerGraphics.fillCircle(8, 4, 3);
+    // Hair (brown)
+    playerGraphics.fillStyle(0x92400e);
+    playerGraphics.fillRect(5, 1, 6, 3);
+    // Eyes
+    playerGraphics.fillStyle(0x1e3a5f);
+    playerGraphics.fillRect(6, 3, 1, 1);
+    playerGraphics.fillRect(9, 3, 1, 1);
+    // Legs
+    playerGraphics.fillStyle(0x78350f);
+    playerGraphics.fillRect(5, 13, 2, 3);
+    playerGraphics.fillRect(9, 13, 2, 3);
+    // Arms
+    playerGraphics.fillStyle(0xfcd9b6);
+    playerGraphics.fillRect(2, 7, 2, 4);
+    playerGraphics.fillRect(12, 7, 2, 4);
+    // Sword in hand
+    playerGraphics.fillStyle(0x9ca3af);
+    playerGraphics.fillRect(13, 4, 2, 6);
+    playerGraphics.fillStyle(0x78350f);
+    playerGraphics.fillRect(13, 9, 2, 2);
     playerGraphics.generateTexture('player', TILE_SIZE, TILE_SIZE);
     playerGraphics.destroy();
 
@@ -72,42 +96,115 @@ export class BootScene extends Phaser.Scene {
     wallGraphics.generateTexture('wall', TILE_SIZE, TILE_SIZE);
     wallGraphics.destroy();
 
-    // Basic enemy sprite (red square)
+    // Basic enemy sprite (slime creature)
     const enemyGraphics = this.make.graphics({ x: 0, y: 0 });
-    enemyGraphics.fillStyle(0xef4444);
-    enemyGraphics.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+    // Slime body
+    enemyGraphics.fillStyle(0x22c55e);
+    enemyGraphics.fillRoundedRect(2, 6, 12, 10, 4);
+    // Slime highlight
+    enemyGraphics.fillStyle(0x4ade80);
+    enemyGraphics.fillCircle(5, 9, 2);
+    // Eyes
+    enemyGraphics.fillStyle(0x000000);
+    enemyGraphics.fillCircle(6, 10, 2);
+    enemyGraphics.fillCircle(10, 10, 2);
+    enemyGraphics.fillStyle(0xffffff);
+    enemyGraphics.fillCircle(6, 9, 1);
+    enemyGraphics.fillCircle(10, 9, 1);
     enemyGraphics.generateTexture('enemy', TILE_SIZE, TILE_SIZE);
     enemyGraphics.destroy();
 
-    // Fast enemy (smaller, green-ish)
+    // Fast enemy (bat creature)
     const fastEnemyGraphics = this.make.graphics({ x: 0, y: 0 });
-    fastEnemyGraphics.fillStyle(0x22c55e);
-    fastEnemyGraphics.fillRect(2, 2, TILE_SIZE - 4, TILE_SIZE - 4);
+    // Wings
+    fastEnemyGraphics.fillStyle(0x6b21a8);
+    fastEnemyGraphics.fillTriangle(0, 6, 6, 8, 4, 12);
+    fastEnemyGraphics.fillTriangle(16, 6, 10, 8, 12, 12);
+    // Body
+    fastEnemyGraphics.fillStyle(0x581c87);
+    fastEnemyGraphics.fillCircle(8, 10, 4);
+    // Ears
+    fastEnemyGraphics.fillTriangle(5, 6, 6, 10, 7, 6);
+    fastEnemyGraphics.fillTriangle(11, 6, 10, 10, 9, 6);
+    // Eyes (red glowing)
+    fastEnemyGraphics.fillStyle(0xef4444);
+    fastEnemyGraphics.fillCircle(6, 9, 1);
+    fastEnemyGraphics.fillCircle(10, 9, 1);
     fastEnemyGraphics.generateTexture('enemy_fast', TILE_SIZE, TILE_SIZE);
     fastEnemyGraphics.destroy();
 
-    // Tank enemy (larger, purple)
+    // Tank enemy (armored orc/golem)
     const tankEnemyGraphics = this.make.graphics({ x: 0, y: 0 });
-    tankEnemyGraphics.fillStyle(0x8b5cf6);
-    tankEnemyGraphics.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
-    tankEnemyGraphics.lineStyle(2, 0x6d28d9);
-    tankEnemyGraphics.strokeRect(1, 1, TILE_SIZE - 2, TILE_SIZE - 2);
+    // Body (stone/armor)
+    tankEnemyGraphics.fillStyle(0x6b7280);
+    tankEnemyGraphics.fillRect(2, 4, 12, 12);
+    // Head
+    tankEnemyGraphics.fillStyle(0x4b5563);
+    tankEnemyGraphics.fillRect(4, 1, 8, 6);
+    // Helmet
+    tankEnemyGraphics.fillStyle(0x78350f);
+    tankEnemyGraphics.fillRect(3, 0, 10, 3);
+    // Eyes (glowing)
+    tankEnemyGraphics.fillStyle(0xfbbf24);
+    tankEnemyGraphics.fillRect(5, 3, 2, 2);
+    tankEnemyGraphics.fillRect(9, 3, 2, 2);
+    // Shoulder pads
+    tankEnemyGraphics.fillStyle(0x78350f);
+    tankEnemyGraphics.fillRect(0, 4, 3, 4);
+    tankEnemyGraphics.fillRect(13, 4, 3, 4);
     tankEnemyGraphics.generateTexture('enemy_tank', TILE_SIZE, TILE_SIZE);
     tankEnemyGraphics.destroy();
 
-    // Ranged enemy (orange, diamond shape)
+    // Ranged enemy (skeleton mage)
     const rangedEnemyGraphics = this.make.graphics({ x: 0, y: 0 });
+    // Robe
+    rangedEnemyGraphics.fillStyle(0x1e3a5f);
+    rangedEnemyGraphics.fillTriangle(8, 5, 2, 15, 14, 15);
+    // Skull head
+    rangedEnemyGraphics.fillStyle(0xe5e5e5);
+    rangedEnemyGraphics.fillCircle(8, 4, 4);
+    // Eye sockets
+    rangedEnemyGraphics.fillStyle(0x000000);
+    rangedEnemyGraphics.fillCircle(6, 4, 1);
+    rangedEnemyGraphics.fillCircle(10, 4, 1);
+    // Glowing eyes
     rangedEnemyGraphics.fillStyle(0xf97316);
-    rangedEnemyGraphics.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+    rangedEnemyGraphics.fillRect(6, 4, 1, 1);
+    rangedEnemyGraphics.fillRect(10, 4, 1, 1);
+    // Staff
+    rangedEnemyGraphics.fillStyle(0x78350f);
+    rangedEnemyGraphics.fillRect(13, 2, 2, 12);
+    rangedEnemyGraphics.fillStyle(0xf97316);
+    rangedEnemyGraphics.fillCircle(14, 2, 2);
     rangedEnemyGraphics.generateTexture('enemy_ranged', TILE_SIZE, TILE_SIZE);
     rangedEnemyGraphics.destroy();
 
-    // Boss enemy (large, red with border)
+    // Boss enemy (demon lord)
     const bossEnemyGraphics = this.make.graphics({ x: 0, y: 0 });
-    bossEnemyGraphics.fillStyle(0xdc2626);
-    bossEnemyGraphics.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
-    bossEnemyGraphics.lineStyle(2, 0xfbbf24);
-    bossEnemyGraphics.strokeRect(1, 1, TILE_SIZE - 2, TILE_SIZE - 2);
+    // Body
+    bossEnemyGraphics.fillStyle(0x7f1d1d);
+    bossEnemyGraphics.fillRect(2, 5, 12, 11);
+    // Head
+    bossEnemyGraphics.fillStyle(0x991b1b);
+    bossEnemyGraphics.fillCircle(8, 5, 5);
+    // Horns
+    bossEnemyGraphics.fillStyle(0x1c1917);
+    bossEnemyGraphics.fillTriangle(2, 5, 4, 0, 5, 5);
+    bossEnemyGraphics.fillTriangle(14, 5, 12, 0, 11, 5);
+    // Glowing eyes
+    bossEnemyGraphics.fillStyle(0xfbbf24);
+    bossEnemyGraphics.fillRect(5, 4, 2, 2);
+    bossEnemyGraphics.fillRect(9, 4, 2, 2);
+    // Mouth/fangs
+    bossEnemyGraphics.fillStyle(0x000000);
+    bossEnemyGraphics.fillRect(6, 7, 4, 2);
+    bossEnemyGraphics.fillStyle(0xffffff);
+    bossEnemyGraphics.fillTriangle(6, 7, 7, 9, 7, 7);
+    bossEnemyGraphics.fillTriangle(10, 7, 9, 9, 9, 7);
+    // Wings hint
+    bossEnemyGraphics.fillStyle(0x450a0a);
+    bossEnemyGraphics.fillTriangle(0, 8, 3, 5, 3, 12);
+    bossEnemyGraphics.fillTriangle(16, 8, 13, 5, 13, 12);
     bossEnemyGraphics.generateTexture('enemy_boss', TILE_SIZE, TILE_SIZE);
     bossEnemyGraphics.destroy();
 
@@ -125,10 +222,28 @@ export class BootScene extends Phaser.Scene {
     projectileGraphics.generateTexture('projectile', 8, 8);
     projectileGraphics.destroy();
 
-    // Exit/stairs tile (green)
+    // Exit/stairs tile (descending staircase)
     const exitGraphics = this.make.graphics({ x: 0, y: 0 });
-    exitGraphics.fillStyle(0x10b981);
+    // Dark background (hole going down)
+    exitGraphics.fillStyle(0x1c1917);
     exitGraphics.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+    // Stairs going down (3D effect)
+    exitGraphics.fillStyle(0x57534e);
+    exitGraphics.fillRect(0, 0, 16, 4);   // Top step
+    exitGraphics.fillStyle(0x44403c);
+    exitGraphics.fillRect(0, 4, 14, 4);   // Second step
+    exitGraphics.fillStyle(0x292524);
+    exitGraphics.fillRect(0, 8, 12, 4);   // Third step
+    exitGraphics.fillStyle(0x1c1917);
+    exitGraphics.fillRect(0, 12, 10, 4);  // Bottom/darkness
+    // Step edges (highlights)
+    exitGraphics.fillStyle(0x78716c);
+    exitGraphics.fillRect(0, 0, 16, 1);
+    exitGraphics.fillRect(0, 4, 14, 1);
+    exitGraphics.fillRect(0, 8, 12, 1);
+    // Glow effect around stairs
+    exitGraphics.lineStyle(1, 0x10b981);
+    exitGraphics.strokeRect(0, 0, TILE_SIZE, TILE_SIZE);
     exitGraphics.generateTexture('exit', TILE_SIZE, TILE_SIZE);
     exitGraphics.destroy();
 
@@ -140,6 +255,53 @@ export class BootScene extends Phaser.Scene {
     itemGraphics.fillCircle(5, 5, 3);
     itemGraphics.generateTexture('item_drop', 12, 12);
     itemGraphics.destroy();
+
+    // === ITEM ICONS ===
+
+    // Armor icon (chestplate shape)
+    const armorIconGraphics = this.make.graphics({ x: 0, y: 0 });
+    armorIconGraphics.fillStyle(0x6b7280);
+    // Body of armor
+    armorIconGraphics.fillRect(4, 6, 8, 8);
+    // Shoulders
+    armorIconGraphics.fillRect(2, 4, 4, 4);
+    armorIconGraphics.fillRect(10, 4, 4, 4);
+    // Neck hole
+    armorIconGraphics.fillStyle(0x1f2937);
+    armorIconGraphics.fillRect(6, 4, 4, 3);
+    // Highlight
+    armorIconGraphics.fillStyle(0x9ca3af);
+    armorIconGraphics.fillRect(5, 7, 2, 5);
+    armorIconGraphics.generateTexture('item_armor', TILE_SIZE, TILE_SIZE);
+    armorIconGraphics.destroy();
+
+    // Accessory icon (ring shape)
+    const accessoryIconGraphics = this.make.graphics({ x: 0, y: 0 });
+    accessoryIconGraphics.lineStyle(3, 0xfbbf24);
+    accessoryIconGraphics.strokeCircle(8, 8, 5);
+    accessoryIconGraphics.fillStyle(0x8b5cf6);
+    accessoryIconGraphics.fillCircle(8, 4, 3); // Gem on top
+    accessoryIconGraphics.fillStyle(0xc4b5fd);
+    accessoryIconGraphics.fillCircle(7, 3, 1); // Gem highlight
+    accessoryIconGraphics.generateTexture('item_accessory', TILE_SIZE, TILE_SIZE);
+    accessoryIconGraphics.destroy();
+
+    // Health potion icon (bottle shape)
+    const potionIconGraphics = this.make.graphics({ x: 0, y: 0 });
+    // Bottle body
+    potionIconGraphics.fillStyle(0xdc2626);
+    potionIconGraphics.fillRoundedRect(4, 6, 8, 8, 2);
+    // Bottle neck
+    potionIconGraphics.fillStyle(0x854d0e);
+    potionIconGraphics.fillRect(6, 2, 4, 5);
+    // Cork
+    potionIconGraphics.fillStyle(0xd97706);
+    potionIconGraphics.fillRect(6, 1, 4, 2);
+    // Liquid highlight
+    potionIconGraphics.fillStyle(0xf87171);
+    potionIconGraphics.fillRect(5, 8, 2, 4);
+    potionIconGraphics.generateTexture('item_consumable', TILE_SIZE, TILE_SIZE);
+    potionIconGraphics.destroy();
 
     // Door (brown/red bar)
     const doorGraphics = this.make.graphics({ x: 0, y: 0 });
@@ -222,5 +384,143 @@ export class BootScene extends Phaser.Scene {
     arrowGraphics.fillTriangle(8, 0, 12, 3, 8, 6);
     arrowGraphics.generateTexture('arrow', 12, 6);
     arrowGraphics.destroy();
+
+    // === WEAPONS ===
+
+    // Wand (purple crystal on stick)
+    const wandGraphics = this.make.graphics({ x: 0, y: 0 });
+    wandGraphics.fillStyle(0x8b4513);
+    wandGraphics.fillRect(6, 8, 4, 10); // Handle
+    wandGraphics.fillStyle(0x8b5cf6);
+    wandGraphics.fillCircle(8, 5, 5); // Crystal
+    wandGraphics.fillStyle(0xc4b5fd);
+    wandGraphics.fillCircle(7, 4, 2); // Highlight
+    wandGraphics.generateTexture('weapon_wand', TILE_SIZE, TILE_SIZE);
+    wandGraphics.destroy();
+
+    // Sword (silver blade)
+    const swordGraphics = this.make.graphics({ x: 0, y: 0 });
+    swordGraphics.fillStyle(0x8b4513);
+    swordGraphics.fillRect(6, 12, 4, 5); // Handle
+    swordGraphics.fillStyle(0x9ca3af);
+    swordGraphics.fillRect(7, 2, 2, 11); // Blade
+    swordGraphics.fillStyle(0xd1d5db);
+    swordGraphics.fillTriangle(7, 2, 8, 0, 9, 2); // Tip
+    swordGraphics.fillStyle(0xfbbf24);
+    swordGraphics.fillRect(5, 11, 6, 2); // Guard
+    swordGraphics.generateTexture('weapon_sword', TILE_SIZE, TILE_SIZE);
+    swordGraphics.destroy();
+
+    // Bow (curved wood with string)
+    const bowGraphics = this.make.graphics({ x: 0, y: 0 });
+    bowGraphics.lineStyle(3, 0x8b4513);
+    bowGraphics.beginPath();
+    bowGraphics.arc(8, 8, 6, -Math.PI * 0.7, Math.PI * 0.7, false);
+    bowGraphics.strokePath();
+    bowGraphics.lineStyle(1, 0xd1d5db);
+    bowGraphics.lineBetween(3, 3, 3, 13); // String
+    bowGraphics.generateTexture('weapon_bow', TILE_SIZE, TILE_SIZE);
+    bowGraphics.destroy();
+
+    // Staff (long rod with orb)
+    const staffGraphics = this.make.graphics({ x: 0, y: 0 });
+    staffGraphics.fillStyle(0x5c3d2e);
+    staffGraphics.fillRect(7, 4, 2, 13); // Rod
+    staffGraphics.fillStyle(0x22d3ee);
+    staffGraphics.fillCircle(8, 3, 4); // Orb
+    staffGraphics.fillStyle(0x67e8f9);
+    staffGraphics.fillCircle(7, 2, 1.5); // Highlight
+    staffGraphics.generateTexture('weapon_staff', TILE_SIZE, TILE_SIZE);
+    staffGraphics.destroy();
+
+    // Daggers (two crossed blades)
+    const daggersGraphics = this.make.graphics({ x: 0, y: 0 });
+    daggersGraphics.fillStyle(0x9ca3af);
+    daggersGraphics.fillRect(3, 4, 2, 8); // Left blade
+    daggersGraphics.fillRect(11, 4, 2, 8); // Right blade
+    daggersGraphics.fillStyle(0xd1d5db);
+    daggersGraphics.fillTriangle(3, 4, 4, 1, 5, 4); // Left tip
+    daggersGraphics.fillTriangle(11, 4, 12, 1, 13, 4); // Right tip
+    daggersGraphics.fillStyle(0x8b4513);
+    daggersGraphics.fillRect(3, 12, 2, 3); // Left handle
+    daggersGraphics.fillRect(11, 12, 2, 3); // Right handle
+    daggersGraphics.generateTexture('weapon_daggers', TILE_SIZE, TILE_SIZE);
+    daggersGraphics.destroy();
+
+    // === WEAPON PROJECTILES ===
+
+    // Wand projectile (yellow magic bolt) - reusing existing 'projectile'
+    const wandProjGraphics = this.make.graphics({ x: 0, y: 0 });
+    wandProjGraphics.fillStyle(0xfbbf24);
+    wandProjGraphics.fillCircle(4, 4, 4);
+    wandProjGraphics.fillStyle(0xfef3c7);
+    wandProjGraphics.fillCircle(3, 3, 2);
+    wandProjGraphics.generateTexture('projectile_wand', 8, 8);
+    wandProjGraphics.destroy();
+
+    // Sword slash effect (arc)
+    const slashGraphics = this.make.graphics({ x: 0, y: 0 });
+    slashGraphics.lineStyle(4, 0xffffff, 0.8);
+    slashGraphics.beginPath();
+    slashGraphics.arc(16, 16, 14, -Math.PI * 0.4, Math.PI * 0.4, false);
+    slashGraphics.strokePath();
+    slashGraphics.lineStyle(2, 0xd1d5db, 0.5);
+    slashGraphics.beginPath();
+    slashGraphics.arc(16, 16, 10, -Math.PI * 0.3, Math.PI * 0.3, false);
+    slashGraphics.strokePath();
+    slashGraphics.generateTexture('slash_effect', 32, 32);
+    slashGraphics.destroy();
+
+    // Bow arrow projectile
+    const bowArrowGraphics = this.make.graphics({ x: 0, y: 0 });
+    bowArrowGraphics.fillStyle(0x8b4513);
+    bowArrowGraphics.fillRect(0, 3, 10, 2); // Shaft
+    bowArrowGraphics.fillStyle(0x9ca3af);
+    bowArrowGraphics.fillTriangle(10, 0, 14, 4, 10, 8); // Tip
+    bowArrowGraphics.fillStyle(0xef4444);
+    bowArrowGraphics.fillRect(0, 2, 3, 1); // Fletching
+    bowArrowGraphics.fillRect(0, 5, 3, 1);
+    bowArrowGraphics.generateTexture('projectile_arrow', 14, 8);
+    bowArrowGraphics.destroy();
+
+    // Staff orb projectile
+    const orbGraphics = this.make.graphics({ x: 0, y: 0 });
+    orbGraphics.fillStyle(0x22d3ee);
+    orbGraphics.fillCircle(6, 6, 6);
+    orbGraphics.fillStyle(0x67e8f9);
+    orbGraphics.fillCircle(4, 4, 2);
+    orbGraphics.lineStyle(1, 0x0891b2);
+    orbGraphics.strokeCircle(6, 6, 6);
+    orbGraphics.generateTexture('projectile_orb', 12, 12);
+    orbGraphics.destroy();
+
+    // Dagger projectile
+    const daggerProjGraphics = this.make.graphics({ x: 0, y: 0 });
+    daggerProjGraphics.fillStyle(0x9ca3af);
+    daggerProjGraphics.fillRect(0, 2, 6, 2); // Blade
+    daggerProjGraphics.fillStyle(0xd1d5db);
+    daggerProjGraphics.fillTriangle(6, 0, 10, 3, 6, 6); // Tip
+    daggerProjGraphics.generateTexture('projectile_dagger', 10, 6);
+    daggerProjGraphics.destroy();
+
+    // Staff explosion effect
+    const explosionGraphics = this.make.graphics({ x: 0, y: 0 });
+    explosionGraphics.fillStyle(0x22d3ee, 0.3);
+    explosionGraphics.fillCircle(16, 16, 16);
+    explosionGraphics.fillStyle(0x67e8f9, 0.5);
+    explosionGraphics.fillCircle(16, 16, 10);
+    explosionGraphics.fillStyle(0xffffff, 0.7);
+    explosionGraphics.fillCircle(16, 16, 4);
+    explosionGraphics.generateTexture('explosion_effect', 32, 32);
+    explosionGraphics.destroy();
+
+    // Weapon drop glow (to show it's a weapon pickup)
+    const weaponDropGraphics = this.make.graphics({ x: 0, y: 0 });
+    weaponDropGraphics.fillStyle(0xfbbf24, 0.3);
+    weaponDropGraphics.fillCircle(10, 10, 10);
+    weaponDropGraphics.fillStyle(0xfbbf24, 0.6);
+    weaponDropGraphics.fillCircle(10, 10, 6);
+    weaponDropGraphics.generateTexture('weapon_drop_glow', 20, 20);
+    weaponDropGraphics.destroy();
   }
 }

@@ -188,10 +188,28 @@ export class InventoryUI {
       bg.setStrokeStyle(1, 0x6b7280);
       slotContainer.add(bg);
 
-      // Item indicator
+      // Item indicator (rarity border)
       const indicator = this.scene.add.rectangle(0, 0, this.SLOT_SIZE - 4, this.SLOT_SIZE - 4, 0x000000, 0);
       indicator.setName('indicator');
       slotContainer.add(indicator);
+
+      // Item icon sprite (hidden by default)
+      const icon = this.scene.add.sprite(0, 0, 'item_drop');
+      icon.setName('icon');
+      icon.setVisible(false);
+      icon.setScale(0.9);
+      slotContainer.add(icon);
+
+      // Comparison indicator (up/down arrow)
+      const compareIndicator = this.scene.add.text(
+        this.SLOT_SIZE / 2 - 2,
+        -this.SLOT_SIZE / 2 + 2,
+        '',
+        { fontSize: '12px', fontStyle: 'bold' }
+      );
+      compareIndicator.setName('compareIndicator');
+      compareIndicator.setOrigin(1, 0);
+      slotContainer.add(compareIndicator);
 
       slotContainer.setData('index', i);
       this.itemSlots.push(slotContainer);
@@ -342,6 +360,71 @@ export class InventoryUI {
     return labels[type];
   }
 
+  // Compare item to currently equipped item of same type
+  // Returns: 1 = better, -1 = worse, 0 = same/not comparable
+  private compareToEquipped(item: Item): number {
+    if (item.type === ItemType.CONSUMABLE) return 0;
+
+    const equipment = this.player.inventory.getEquipment();
+    let equippedItem: Item | null = null;
+
+    switch (item.type) {
+      case ItemType.WEAPON:
+        equippedItem = equipment.weapon;
+        break;
+      case ItemType.ARMOR:
+        equippedItem = equipment.armor;
+        break;
+      case ItemType.ACCESSORY:
+        equippedItem = equipment.accessory;
+        break;
+    }
+
+    // If nothing equipped, this item is better
+    if (!equippedItem) return 1;
+
+    // Calculate total stat value for comparison
+    const itemValue = this.getItemStatValue(item);
+    const equippedValue = this.getItemStatValue(equippedItem);
+
+    if (itemValue > equippedValue) return 1;
+    if (itemValue < equippedValue) return -1;
+    return 0;
+  }
+
+  private getItemStatValue(item: Item): number {
+    let value = 0;
+    // Weight stats by importance
+    if (item.stats.attack) value += item.stats.attack * 2;
+    if (item.stats.defense) value += item.stats.defense * 2;
+    if (item.stats.maxHp) value += item.stats.maxHp * 0.5;
+    if (item.stats.speed) value += item.stats.speed * 0.3;
+    return value;
+  }
+
+  private getItemTexture(item: Item): string {
+    // Weapons with weaponData use their specific weapon texture
+    if (item.type === ItemType.WEAPON && item.weaponData) {
+      const weaponTextures: Record<string, string> = {
+        wand: 'weapon_wand',
+        sword: 'weapon_sword',
+        bow: 'weapon_bow',
+        staff: 'weapon_staff',
+        daggers: 'weapon_daggers',
+      };
+      return weaponTextures[item.weaponData.weaponType] || 'weapon_wand';
+    }
+
+    // Other items use generic type icons
+    const typeTextures: Record<ItemType, string> = {
+      [ItemType.WEAPON]: 'weapon_sword',
+      [ItemType.ARMOR]: 'item_armor',
+      [ItemType.ACCESSORY]: 'item_accessory',
+      [ItemType.CONSUMABLE]: 'item_consumable',
+    };
+    return typeTextures[item.type];
+  }
+
   refresh(): void {
     // Guard against refreshing after scene restart
     if (!this.container || !this.container.scene) return;
@@ -352,13 +435,40 @@ export class InventoryUI {
     // Update inventory slots
     this.itemSlots.forEach((slot, index) => {
       const indicator = slot.getByName('indicator') as Phaser.GameObjects.Rectangle;
-      if (!indicator) return;
+      const icon = slot.getByName('icon') as Phaser.GameObjects.Sprite;
+      const compareIndicator = slot.getByName('compareIndicator') as Phaser.GameObjects.Text;
+      if (!indicator || !icon) return;
 
       if (index < items.length) {
         const item = items[index];
-        indicator.setFillStyle(RARITY_COLORS[item.rarity], 0.6);
+        // Show rarity-colored border
+        indicator.setStrokeStyle(2, RARITY_COLORS[item.rarity]);
+        indicator.setFillStyle(0x000000, 0.3);
+        // Show item icon
+        icon.setTexture(this.getItemTexture(item));
+        icon.setTint(RARITY_COLORS[item.rarity]);
+        icon.setVisible(true);
+
+        // Show comparison indicator for equippable items
+        if (compareIndicator) {
+          const comparison = this.compareToEquipped(item);
+          if (comparison > 0) {
+            compareIndicator.setText('▲');
+            compareIndicator.setColor('#22cc22');
+            compareIndicator.setVisible(true);
+          } else if (comparison < 0) {
+            compareIndicator.setText('▼');
+            compareIndicator.setColor('#ff4444');
+            compareIndicator.setVisible(true);
+          } else {
+            compareIndicator.setVisible(false);
+          }
+        }
       } else {
+        indicator.setStrokeStyle(0);
         indicator.setFillStyle(0x000000, 0);
+        icon.setVisible(false);
+        if (compareIndicator) compareIndicator.setVisible(false);
       }
     });
 
@@ -370,16 +480,31 @@ export class InventoryUI {
 
       const indicator = slotContainer.getByName('indicator') as Phaser.GameObjects.Rectangle;
       const itemText = slotContainer.getByName('itemText') as Phaser.GameObjects.Text;
+      let icon = slotContainer.getByName('equipIcon') as Phaser.GameObjects.Sprite;
       if (!indicator || !itemText) return;
 
       const item = equipment[type];
 
       if (item) {
-        indicator.setFillStyle(RARITY_COLORS[item.rarity], 0.6);
-        itemText.setText(item.name.substring(0, 6));
+        indicator.setStrokeStyle(2, RARITY_COLORS[item.rarity]);
+        indicator.setFillStyle(0x000000, 0.3);
+        itemText.setText('');
+
+        // Create or update equipment icon
+        if (!icon) {
+          icon = this.scene.add.sprite(0, 0, this.getItemTexture(item));
+          icon.setName('equipIcon');
+          icon.setScale(0.9);
+          slotContainer.add(icon);
+        }
+        icon.setTexture(this.getItemTexture(item));
+        icon.setTint(RARITY_COLORS[item.rarity]);
+        icon.setVisible(true);
       } else {
+        indicator.setStrokeStyle(0);
         indicator.setFillStyle(0x000000, 0);
         itemText.setText('');
+        if (icon) icon.setVisible(false);
       }
     });
   }

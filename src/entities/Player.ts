@@ -7,6 +7,7 @@ import {
 } from '../utils/constants';
 import { InventorySystem } from '../systems/InventorySystem';
 import { Item, ItemType } from '../systems/Item';
+import { Weapon, WeaponType } from '../systems/Weapon';
 
 export class Player extends Phaser.Physics.Arcade.Sprite {
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -22,6 +23,10 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   private baseAttack: number = PLAYER_BASE_ATTACK;
   private baseDefense: number = PLAYER_BASE_DEFENSE;
   private baseSpeed: number = PLAYER_SPEED;
+
+  // Weapon system
+  private defaultWeapon: Weapon = new Weapon(WeaponType.WAND);
+  private attackCooldown: number = 0;
 
   // Computed stats (base + equipment)
   public hp: number = PLAYER_MAX_HP;
@@ -111,6 +116,30 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     if (this.dodgeCooldown > 0) {
       this.dodgeCooldown -= delta;
     }
+    if (this.attackCooldown > 0) {
+      this.attackCooldown -= delta;
+    }
+  }
+
+  // Weapon methods
+  getWeapon(): Weapon {
+    const equippedItem = this.inventory.getEquipment().weapon;
+    if (equippedItem?.weaponData) {
+      return new Weapon(equippedItem.weaponData.weaponType, equippedItem.weaponData.rarity);
+    }
+    return this.defaultWeapon;
+  }
+
+  canAttack(): boolean {
+    return this.attackCooldown <= 0 && !this.isDodging;
+  }
+
+  startAttackCooldown(): void {
+    this.attackCooldown = this.getWeapon().stats.attackSpeed;
+  }
+
+  getAttackDamage(): number {
+    return Math.floor(this.attack * this.getWeapon().getDamageMultiplier());
   }
 
   private dodge(): void {

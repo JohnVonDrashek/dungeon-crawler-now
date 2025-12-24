@@ -8,12 +8,13 @@ import { CombatSystem } from '../systems/CombatSystem';
 import { LootSystem } from '../systems/LootSystem';
 import { AudioSystem } from '../systems/AudioSystem';
 import { SaveSystem } from '../systems/SaveSystem';
-import { Item, RARITY_COLORS, ItemRarity } from '../systems/Item';
+import { Item, ItemType, RARITY_COLORS, ItemRarity, createItemFromWeapon } from '../systems/Item';
 import { InventoryUI } from '../ui/InventoryUI';
 import { MinimapUI } from '../ui/MinimapUI';
 import { LevelUpUI } from '../ui/LevelUpUI';
 import { RoomManager } from '../systems/RoomManager';
 import { HazardSystem } from '../systems/HazardSystem';
+import { Weapon, WeaponType } from '../systems/Weapon';
 
 export class GameScene extends Phaser.Scene {
   private player!: Player;
@@ -25,6 +26,7 @@ export class GameScene extends Phaser.Scene {
   private projectiles!: Phaser.Physics.Arcade.Group;
   private enemyProjectiles!: Phaser.Physics.Arcade.Group;
   private itemDrops!: Phaser.Physics.Arcade.Group;
+  private weaponDrops!: Phaser.Physics.Arcade.Group;
   private healthBars: Map<Enemy, Phaser.GameObjects.Container> = new Map();
   private combatSystem!: CombatSystem;
   private lootSystem!: LootSystem;
@@ -76,6 +78,7 @@ export class GameScene extends Phaser.Scene {
     this.projectiles = this.physics.add.group({ runChildUpdate: true });
     this.enemyProjectiles = this.physics.add.group({ runChildUpdate: true });
     this.itemDrops = this.physics.add.group();
+    this.weaponDrops = this.physics.add.group();
 
     // Create enemies group (enemies spawn on room entry)
     this.enemies = this.physics.add.group({ runChildUpdate: false });
@@ -389,6 +392,12 @@ export class GameScene extends Phaser.Scene {
       undefined, this
     );
 
+    this.physics.add.overlap(
+      this.player, this.weaponDrops,
+      this.handleWeaponPickup as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
+      undefined, this
+    );
+
     // Door collision
     this.physics.add.collider(this.player, this.roomManager.getDoorGroup());
     this.physics.add.collider(this.enemies, this.roomManager.getDoorGroup());
@@ -424,12 +433,29 @@ export class GameScene extends Phaser.Scene {
     const projectile = projectileObj as Phaser.Physics.Arcade.Sprite;
     const enemy = enemyObj as unknown as Enemy;
 
-    const result = this.combatSystem.calculateDamage(this.player, enemy);
-    this.combatSystem.applyDamage(enemy, result);
-    this.audioSystem.play('sfx_hit', 0.3);
-    this.showDamageNumber(enemy.x, enemy.y, result.damage, false);
+    // Check if this projectile already hit this enemy (for piercing)
+    const hitEnemies: Set<Enemy> = projectile.getData('hitEnemies') || new Set();
+    if (hitEnemies.has(enemy)) return;
+    hitEnemies.add(enemy);
+    projectile.setData('hitEnemies', hitEnemies);
 
-    projectile.destroy();
+    // Use projectile's stored damage
+    const damage = projectile.getData('damage') || this.player.getAttackDamage();
+    enemy.takeDamage(damage);
+    this.audioSystem.play('sfx_hit', 0.3);
+    this.showDamageNumber(enemy.x, enemy.y, damage, false);
+
+    // Handle AoE explosion
+    const isAoe = projectile.getData('aoe');
+    if (isAoe) {
+      this.createExplosionFromProjectile(projectile.x, projectile.y, projectile);
+    }
+
+    // Handle piercing - don't destroy if piercing
+    const isPiercing = projectile.getData('piercing');
+    if (!isPiercing) {
+      projectile.destroy();
+    }
   }
 
   private handleEnemyProjectilePlayerCollision(
@@ -456,6 +482,13 @@ export class GameScene extends Phaser.Scene {
     projectileObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject
   ): void {
     const projectile = projectileObj as Phaser.Physics.Arcade.Sprite;
+
+    // Handle AoE explosion on wall hit
+    const isAoe = projectile.getData('aoe');
+    if (isAoe) {
+      this.createExplosionFromProjectile(projectile.x, projectile.y, projectile);
+    }
+
     projectile.destroy();
   }
 
@@ -500,12 +533,14 @@ export class GameScene extends Phaser.Scene {
   ): void {
     const itemSprite = itemObj as Phaser.Physics.Arcade.Sprite;
     const item = itemSprite.getData('item') as Item;
+    const glow = itemSprite.getData('glow') as Phaser.GameObjects.Sprite;
 
     if (item && this.player.pickupItem(item)) {
       this.showPickupText(itemSprite.x, itemSprite.y, item);
       this.audioSystem.play('sfx_pickup', 0.4);
       this.itemsCollected++;
       this.registry.set('itemsCollected', this.itemsCollected);
+      if (glow) glow.destroy();
       itemSprite.destroy();
     }
   }
@@ -529,27 +564,174 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  private getItemDropTexture(item: Item): string {
+    // Use specific texture based on item type
+    switch (item.type) {
+      case ItemType.ARMOR:
+        return 'item_armor';
+      case ItemType.ACCESSORY:
+        return 'item_accessory';
+      case ItemType.CONSUMABLE:
+        return 'item_consumable';
+      case ItemType.WEAPON:
+        // Weapons with weaponData use their weapon texture
+        if (item.weaponData) {
+          const weaponTextures: Record<string, string> = {
+            wand: 'weapon_wand',
+            sword: 'weapon_sword',
+            bow: 'weapon_bow',
+            staff: 'weapon_staff',
+            daggers: 'weapon_daggers',
+          };
+          return weaponTextures[item.weaponData.weaponType] || 'weapon_wand';
+        }
+        return 'weapon_sword';
+      default:
+        return 'item_drop';
+    }
+  }
+
   private spawnItemDrop(x: number, y: number, item: Item): void {
-    const drop = this.itemDrops.create(x, y, 'item_drop') as Phaser.Physics.Arcade.Sprite;
+    const texture = this.getItemDropTexture(item);
+    const drop = this.itemDrops.create(x, y, texture) as Phaser.Physics.Arcade.Sprite;
     drop.setData('item', item);
     drop.setDepth(5);
     drop.setTint(RARITY_COLORS[item.rarity]);
 
+    // Add glow effect behind the item
+    const glow = this.add.sprite(x, y, 'weapon_drop_glow');
+    glow.setDepth(4);
+    glow.setTint(RARITY_COLORS[item.rarity]);
+    glow.setAlpha(0.4);
+    drop.setData('glow', glow);
+
+    // Floating animation
     this.tweens.add({
-      targets: drop,
-      y: y - 4,
+      targets: [drop, glow],
+      y: y - 5,
       duration: 500,
       yoyo: true,
       repeat: -1,
       ease: 'Sine.easeInOut',
     });
 
-    drop.setScale(0);
+    // Glow pulse
     this.tweens.add({
-      targets: drop,
+      targets: glow,
+      alpha: 0.7,
+      scale: 1.3,
+      duration: 600,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+
+    // Pop-in animation
+    drop.setScale(0);
+    glow.setScale(0);
+    this.tweens.add({
+      targets: [drop, glow],
       scale: 1,
       duration: 200,
       ease: 'Back.easeOut',
+    });
+  }
+
+  private spawnWeaponDrop(x: number, y: number, weapon: Weapon): void {
+    const drop = this.weaponDrops.create(x, y, weapon.stats.texture) as Phaser.Physics.Arcade.Sprite;
+    drop.setData('weapon', weapon);
+    drop.setDepth(5);
+
+    // Rarity-based tint
+    const rarityColors = [0xffffff, 0x00ff00, 0x0088ff, 0xaa00ff, 0xffaa00];
+    drop.setTint(rarityColors[weapon.rarity]);
+
+    // Add glow effect
+    const glow = this.add.sprite(x, y, 'weapon_drop_glow');
+    glow.setDepth(4);
+    glow.setTint(rarityColors[weapon.rarity]);
+    glow.setAlpha(0.5);
+    drop.setData('glow', glow);
+
+    // Floating animation
+    this.tweens.add({
+      targets: [drop, glow],
+      y: y - 6,
+      duration: 600,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+
+    // Glow pulse
+    this.tweens.add({
+      targets: glow,
+      alpha: 0.8,
+      scale: 1.2,
+      duration: 800,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+
+    // Pop-in animation
+    drop.setScale(0);
+    glow.setScale(0);
+    this.tweens.add({
+      targets: [drop, glow],
+      scale: 1,
+      duration: 250,
+      ease: 'Back.easeOut',
+    });
+  }
+
+  private handleWeaponPickup(
+    _playerObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject,
+    weaponObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject
+  ): void {
+    const weaponSprite = weaponObj as Phaser.Physics.Arcade.Sprite;
+    const weapon = weaponSprite.getData('weapon') as Weapon;
+    const glow = weaponSprite.getData('glow') as Phaser.GameObjects.Sprite;
+
+    if (weapon) {
+      // Convert weapon to item and add to inventory
+      const weaponItem = createItemFromWeapon(weapon);
+      if (this.player.pickupItem(weaponItem)) {
+        this.showWeaponPickupText(weaponSprite.x, weaponSprite.y, weapon);
+        this.audioSystem.play('sfx_pickup', 0.5);
+        this.itemsCollected++;
+        this.registry.set('itemsCollected', this.itemsCollected);
+
+        if (glow) glow.destroy();
+        weaponSprite.destroy();
+      } else {
+        // Inventory full - show message
+        this.showGameMessage('Inventory full!');
+      }
+    }
+  }
+
+  private showWeaponPickupText(x: number, y: number, weapon: Weapon): void {
+    const rarityColors = ['#ffffff', '#00ff00', '#0088ff', '#aa00ff', '#ffaa00'];
+    const color = rarityColors[weapon.rarity];
+
+    const text = this.add.text(x, y - 10, `Equipped: ${weapon.getDisplayName()}`, {
+      fontSize: '11px',
+      color: color,
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 2,
+    });
+    text.setOrigin(0.5, 1);
+    text.setDepth(100);
+
+    this.tweens.add({
+      targets: text,
+      y: y - 40,
+      alpha: 0,
+      duration: 1500,
+      ease: 'Cubic.easeOut',
+      onComplete: () => text.destroy(),
     });
   }
 
@@ -604,10 +786,14 @@ export class GameScene extends Phaser.Scene {
       ).length;
       this.roomManager.onEnemyKilled(remainingEnemies);
 
-      // Boss drops guaranteed rare+ loot
+      // Boss drops guaranteed rare+ loot and a weapon
       if (enemy instanceof BossEnemy) {
         const loot = this.lootSystem.generateGuaranteedLoot(ItemRarity.RARE);
         this.spawnItemDrop(enemy.x, enemy.y, loot);
+
+        // Guaranteed weapon from bosses with higher rarity
+        const weapon = Weapon.createRandom(this.floor + 5);
+        this.spawnWeaponDrop(enemy.x + 24, enemy.y, weapon);
 
         // Check for victory on final boss
         if (this.isFinalBoss) {
@@ -616,9 +802,16 @@ export class GameScene extends Phaser.Scene {
           });
         }
       } else {
+        // Regular enemies: 40% chance for item, 15% chance for weapon
         const loot = this.lootSystem.generateLoot(this.floor);
         if (loot) {
           this.spawnItemDrop(enemy.x, enemy.y, loot);
+        }
+
+        // Weapon drop chance
+        if (Math.random() < 0.15) {
+          const weapon = Weapon.createRandom(this.floor);
+          this.spawnWeaponDrop(enemy.x, enemy.y, weapon);
         }
       }
     });
@@ -888,28 +1081,270 @@ export class GameScene extends Phaser.Scene {
   }
 
   private playerAttack(pointer: Phaser.Input.Pointer): void {
+    if (!this.player.canAttack()) return;
+
+    const weapon = this.player.getWeapon();
     const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
     const angle = Phaser.Math.Angle.Between(
       this.player.x, this.player.y,
       worldPoint.x, worldPoint.y
     );
 
+    this.player.startAttackCooldown();
+
+    switch (weapon.stats.type) {
+      case WeaponType.SWORD:
+        this.performMeleeAttack(angle, weapon);
+        break;
+      case WeaponType.BOW:
+        this.performBowAttack(angle, weapon);
+        break;
+      case WeaponType.STAFF:
+        this.performStaffAttack(angle, weapon);
+        break;
+      case WeaponType.DAGGERS:
+        this.performDaggerAttack(angle, weapon);
+        break;
+      case WeaponType.WAND:
+      default:
+        this.performWandAttack(angle, weapon);
+        break;
+    }
+
+    this.audioSystem.play('sfx_attack', 0.3);
+  }
+
+  private performWandAttack(angle: number, weapon: Weapon): void {
     const projectile = this.projectiles.create(
-      this.player.x, this.player.y, 'projectile'
+      this.player.x, this.player.y, weapon.stats.projectileTexture
     ) as Phaser.Physics.Arcade.Sprite;
 
     projectile.setDepth(8);
-    const speed = 400;
-    projectile.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+    projectile.setData('damage', this.player.getAttackDamage());
+    projectile.setData('piercing', weapon.stats.piercing);
+    projectile.setRotation(angle);
+    projectile.setVelocity(
+      Math.cos(angle) * weapon.stats.projectileSpeed,
+      Math.sin(angle) * weapon.stats.projectileSpeed
+    );
 
-    this.audioSystem.play('sfx_attack', 0.3);
-
-    this.time.delayedCall(2000, () => {
+    this.time.delayedCall(2000 * weapon.stats.range, () => {
       if (projectile.active) projectile.destroy();
     });
   }
 
+  private performSwordAttack(angle: number, weapon: Weapon): void {
+    // Create slash effect
+    const slash = this.add.sprite(
+      this.player.x + Math.cos(angle) * 20,
+      this.player.y + Math.sin(angle) * 20,
+      weapon.stats.projectileTexture
+    );
+    slash.setDepth(15);
+    slash.setRotation(angle);
+    slash.setScale(weapon.stats.range);
+
+    // Fade out the slash
+    this.tweens.add({
+      targets: slash,
+      alpha: 0,
+      scale: weapon.stats.range * 1.3,
+      duration: 150,
+      onComplete: () => slash.destroy(),
+    });
+
+    // Check for enemies in the arc
+    const slashRange = TILE_SIZE * 2 * weapon.stats.range;
+    const slashArc = Phaser.Math.DegToRad(weapon.stats.spread);
+
+    this.enemies.getChildren().forEach((child) => {
+      const enemy = child as unknown as Enemy;
+      if (!enemy.active) return;
+
+      const dist = Phaser.Math.Distance.Between(
+        this.player.x, this.player.y,
+        enemy.x, enemy.y
+      );
+
+      if (dist <= slashRange) {
+        const enemyAngle = Phaser.Math.Angle.Between(
+          this.player.x, this.player.y,
+          enemy.x, enemy.y
+        );
+
+        let angleDiff = Math.abs(angle - enemyAngle);
+        if (angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
+
+        if (angleDiff <= slashArc / 2) {
+          // Hit the enemy
+          const damage = this.player.getAttackDamage();
+          enemy.takeDamage(damage);
+          this.showDamageNumber(enemy.x, enemy.y, damage, false);
+
+          // Knockback
+          const knockbackForce = 150;
+          enemy.setVelocity(
+            Math.cos(enemyAngle) * knockbackForce,
+            Math.sin(enemyAngle) * knockbackForce
+          );
+        }
+      }
+    });
+  }
+
+  private performMeleeAttack(angle: number, weapon: Weapon): void {
+    this.performSwordAttack(angle, weapon);
+  }
+
+  private performBowAttack(angle: number, weapon: Weapon): void {
+    const projectile = this.projectiles.create(
+      this.player.x, this.player.y, weapon.stats.projectileTexture
+    ) as Phaser.Physics.Arcade.Sprite;
+
+    projectile.setDepth(8);
+    projectile.setData('damage', this.player.getAttackDamage());
+    projectile.setData('piercing', true);
+    projectile.setRotation(angle);
+    projectile.setVelocity(
+      Math.cos(angle) * weapon.stats.projectileSpeed,
+      Math.sin(angle) * weapon.stats.projectileSpeed
+    );
+
+    this.time.delayedCall(2500 * weapon.stats.range, () => {
+      if (projectile.active) projectile.destroy();
+    });
+  }
+
+  private performStaffAttack(angle: number, weapon: Weapon): void {
+    const projectile = this.projectiles.create(
+      this.player.x, this.player.y, weapon.stats.projectileTexture
+    ) as Phaser.Physics.Arcade.Sprite;
+
+    projectile.setDepth(8);
+    projectile.setData('damage', this.player.getAttackDamage());
+    projectile.setData('aoe', true);
+    projectile.setData('aoeRadius', weapon.stats.aoeRadius);
+    projectile.setRotation(angle);
+    projectile.setVelocity(
+      Math.cos(angle) * weapon.stats.projectileSpeed,
+      Math.sin(angle) * weapon.stats.projectileSpeed
+    );
+
+    // Add a slight bobbing animation
+    this.tweens.add({
+      targets: projectile,
+      scaleX: 1.2,
+      scaleY: 1.2,
+      duration: 200,
+      yoyo: true,
+      repeat: -1,
+    });
+
+    this.time.delayedCall(2000 * weapon.stats.range, () => {
+      if (projectile.active) {
+        this.createExplosion(projectile.x, projectile.y, weapon);
+        projectile.destroy();
+      }
+    });
+  }
+
+  private performDaggerAttack(angle: number, weapon: Weapon): void {
+    const spreadRad = Phaser.Math.DegToRad(weapon.stats.spread);
+
+    for (let i = 0; i < weapon.stats.projectileCount; i++) {
+      const offset = (i - (weapon.stats.projectileCount - 1) / 2) * spreadRad;
+      const projectileAngle = angle + offset;
+
+      const projectile = this.projectiles.create(
+        this.player.x, this.player.y, weapon.stats.projectileTexture
+      ) as Phaser.Physics.Arcade.Sprite;
+
+      projectile.setDepth(8);
+      projectile.setData('damage', this.player.getAttackDamage());
+      projectile.setData('piercing', false);
+      projectile.setRotation(projectileAngle);
+      projectile.setVelocity(
+        Math.cos(projectileAngle) * weapon.stats.projectileSpeed,
+        Math.sin(projectileAngle) * weapon.stats.projectileSpeed
+      );
+
+      this.time.delayedCall(1500 * weapon.stats.range, () => {
+        if (projectile.active) projectile.destroy();
+      });
+    }
+  }
+
+  private createExplosion(x: number, y: number, weapon: Weapon): void {
+    // Visual explosion
+    const explosion = this.add.sprite(x, y, 'explosion_effect');
+    explosion.setDepth(15);
+    explosion.setScale(0.5);
+
+    this.tweens.add({
+      targets: explosion,
+      scale: 2,
+      alpha: 0,
+      duration: 300,
+      onComplete: () => explosion.destroy(),
+    });
+
+    // Damage enemies in radius
+    const radius = weapon.stats.aoeRadius;
+    this.enemies.getChildren().forEach((child) => {
+      const enemy = child as unknown as Enemy;
+      if (!enemy.active) return;
+
+      const dist = Phaser.Math.Distance.Between(x, y, enemy.x, enemy.y);
+      if (dist <= radius) {
+        const damage = this.player.getAttackDamage();
+        enemy.takeDamage(damage);
+        this.showDamageNumber(enemy.x, enemy.y, damage, false);
+      }
+    });
+
+    this.shakeCamera(4, 100);
+  }
+
+  private createExplosionFromProjectile(
+    x: number,
+    y: number,
+    projectile: Phaser.Physics.Arcade.Sprite
+  ): void {
+    // Visual explosion
+    const explosion = this.add.sprite(x, y, 'explosion_effect');
+    explosion.setDepth(15);
+    explosion.setScale(0.5);
+
+    this.tweens.add({
+      targets: explosion,
+      scale: 2,
+      alpha: 0,
+      duration: 300,
+      onComplete: () => explosion.destroy(),
+    });
+
+    // Damage enemies in radius
+    const radius = projectile.getData('aoeRadius') || 64;
+    const damage = projectile.getData('damage') || this.player.getAttackDamage();
+
+    this.enemies.getChildren().forEach((child) => {
+      const enemy = child as unknown as Enemy;
+      if (!enemy.active) return;
+
+      const dist = Phaser.Math.Distance.Between(x, y, enemy.x, enemy.y);
+      if (dist <= radius) {
+        enemy.takeDamage(damage);
+        this.showDamageNumber(enemy.x, enemy.y, damage, false);
+      }
+    });
+
+    this.shakeCamera(4, 100);
+  }
+
   private hudText!: Phaser.GameObjects.Text;
+  private weaponHUD!: Phaser.GameObjects.Container;
+  private weaponIcon!: Phaser.GameObjects.Sprite;
+  private weaponText!: Phaser.GameObjects.Text;
 
   private createHUD(): void {
     this.hudText = this.add.text(10, 10, '', {
@@ -920,6 +1355,39 @@ export class GameScene extends Phaser.Scene {
     });
     this.hudText.setScrollFactor(0);
     this.hudText.setDepth(100);
+
+    // Weapon HUD in bottom-right
+    this.weaponHUD = this.add.container(
+      this.cameras.main.width - 10,
+      this.cameras.main.height - 60
+    );
+    this.weaponHUD.setScrollFactor(0);
+    this.weaponHUD.setDepth(100);
+
+    // Background for weapon display
+    const weaponBg = this.add.rectangle(0, 0, 120, 50, 0x000000, 0.5);
+    weaponBg.setOrigin(1, 1);
+
+    // Weapon icon
+    const weapon = this.player.getWeapon();
+    this.weaponIcon = this.add.sprite(-100, -25, weapon.stats.texture);
+    this.weaponIcon.setScale(1.5);
+    const rarityColors = [0xffffff, 0x00ff00, 0x0088ff, 0xaa00ff, 0xffaa00];
+    this.weaponIcon.setTint(rarityColors[weapon.rarity]);
+
+    // Weapon text
+    this.weaponText = this.add.text(-80, -38, weapon.getDisplayName(), {
+      fontSize: '10px',
+      color: '#ffffff',
+      wordWrap: { width: 75 },
+    });
+
+    this.weaponHUD.add([weaponBg, this.weaponIcon, this.weaponText]);
+
+    // Listen for equipment changes to update weapon display
+    this.events.on('equipmentChanged', () => {
+      this.updateWeaponHUD();
+    });
 
     const instructions = this.add.text(
       10,
@@ -955,6 +1423,15 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.hudText.setText(lines.join('\n'));
+  }
+
+  private updateWeaponHUD(): void {
+    const weapon = this.player.getWeapon();
+    const rarityColors = [0xffffff, 0x00ff00, 0x0088ff, 0xaa00ff, 0xffaa00];
+
+    this.weaponIcon.setTexture(weapon.stats.texture);
+    this.weaponIcon.setTint(rarityColors[weapon.rarity]);
+    this.weaponText.setText(weapon.getDisplayName());
   }
 
   private handlePlayerDeath(): void {
