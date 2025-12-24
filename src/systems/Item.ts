@@ -159,3 +159,146 @@ export function createItem(templateId: string): Item | null {
     ...template,
   };
 }
+
+// Procedural item generation
+const WEAPON_PREFIXES = ['Rusty', 'Iron', 'Steel', 'Enchanted', 'Cursed', 'Ancient', 'Blessed', 'Dark'];
+const WEAPON_TYPES = ['Sword', 'Dagger', 'Axe', 'Mace', 'Spear', 'Blade', 'Cleaver'];
+const ARMOR_PREFIXES = ['Tattered', 'Leather', 'Chain', 'Plate', 'Mystic', 'Dragon', 'Shadow'];
+const ARMOR_TYPES = ['Armor', 'Mail', 'Vest', 'Cuirass', 'Guard', 'Plate'];
+const ACCESSORY_PREFIXES = ['Wooden', 'Silver', 'Golden', 'Crystal', 'Arcane', 'Blessed'];
+const ACCESSORY_TYPES = ['Ring', 'Amulet', 'Pendant', 'Charm', 'Talisman', 'Boots'];
+
+const RARITY_MULTIPLIERS: Record<ItemRarity, number> = {
+  [ItemRarity.COMMON]: 1,
+  [ItemRarity.UNCOMMON]: 1.5,
+  [ItemRarity.RARE]: 2.2,
+  [ItemRarity.EPIC]: 3,
+};
+
+const RARITY_BONUS_STATS: Record<ItemRarity, number> = {
+  [ItemRarity.COMMON]: 0,
+  [ItemRarity.UNCOMMON]: 1,
+  [ItemRarity.RARE]: 2,
+  [ItemRarity.EPIC]: 3,
+};
+
+function randomPick<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function randomRange(min: number, max: number): number {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+export function generateProceduralItem(floor: number, rarity: ItemRarity): Item {
+  const types = [ItemType.WEAPON, ItemType.ARMOR, ItemType.ACCESSORY];
+  const type = randomPick(types);
+
+  return generateProceduralItemOfType(floor, rarity, type);
+}
+
+export function generateProceduralItemOfType(floor: number, rarity: ItemRarity, type: ItemType): Item {
+  const multiplier = RARITY_MULTIPLIERS[rarity];
+  const bonusStats = RARITY_BONUS_STATS[rarity];
+  const floorBonus = Math.floor(floor / 3);
+
+  let name: string;
+  const stats: ItemStats = {};
+  let description: string;
+
+  switch (type) {
+    case ItemType.WEAPON: {
+      const prefix = randomPick(WEAPON_PREFIXES);
+      const weaponType = randomPick(WEAPON_TYPES);
+      name = `${prefix} ${weaponType}`;
+
+      // Primary stat: attack
+      const baseAttack = randomRange(2, 5) + floorBonus;
+      stats.attack = Math.floor(baseAttack * multiplier);
+
+      // Bonus stats based on rarity
+      if (bonusStats >= 1 && Math.random() > 0.5) {
+        stats.speed = randomRange(5, 15);
+      }
+      if (bonusStats >= 2 && Math.random() > 0.5) {
+        stats.maxHp = randomRange(5, 15);
+      }
+
+      description = `A ${rarity} weapon. ATK +${stats.attack}`;
+      break;
+    }
+
+    case ItemType.ARMOR: {
+      const prefix = randomPick(ARMOR_PREFIXES);
+      const armorType = randomPick(ARMOR_TYPES);
+      name = `${prefix} ${armorType}`;
+
+      // Primary stat: defense
+      const baseDefense = randomRange(1, 4) + floorBonus;
+      stats.defense = Math.floor(baseDefense * multiplier);
+
+      // Bonus stats based on rarity
+      if (bonusStats >= 1 && Math.random() > 0.5) {
+        stats.maxHp = randomRange(10, 25);
+      }
+      if (bonusStats >= 2 && Math.random() > 0.5) {
+        // Heavy armor might reduce speed
+        if (Math.random() > 0.7) {
+          stats.speed = -randomRange(5, 15);
+        } else {
+          stats.speed = randomRange(5, 10);
+        }
+      }
+
+      description = `A ${rarity} armor. DEF +${stats.defense}`;
+      break;
+    }
+
+    case ItemType.ACCESSORY: {
+      const prefix = randomPick(ACCESSORY_PREFIXES);
+      const accessoryType = randomPick(ACCESSORY_TYPES);
+      name = `${prefix} ${accessoryType}`;
+
+      // Accessories have varied stats
+      const statRoll = Math.random();
+      if (statRoll < 0.33) {
+        stats.maxHp = Math.floor(randomRange(10, 20) * multiplier);
+        description = `A ${rarity} accessory. HP +${stats.maxHp}`;
+      } else if (statRoll < 0.66) {
+        stats.speed = Math.floor(randomRange(10, 25) * multiplier);
+        description = `A ${rarity} accessory. SPD +${stats.speed}`;
+      } else {
+        stats.attack = Math.floor(randomRange(2, 5) * multiplier);
+        description = `A ${rarity} accessory. ATK +${stats.attack}`;
+      }
+
+      // Bonus stats
+      if (bonusStats >= 1 && Math.random() > 0.5) {
+        if (!stats.defense) stats.defense = randomRange(1, 5);
+      }
+      if (bonusStats >= 2 && Math.random() > 0.5) {
+        if (!stats.attack) stats.attack = randomRange(2, 5);
+      }
+      if (bonusStats >= 3) {
+        // Epic accessories get all stats
+        if (!stats.maxHp) stats.maxHp = randomRange(10, 20);
+        if (!stats.speed) stats.speed = randomRange(10, 20);
+      }
+
+      break;
+    }
+
+    default:
+      name = 'Mystery Item';
+      description = 'Unknown origin.';
+  }
+
+  return {
+    id: `item_${itemIdCounter++}`,
+    name,
+    type,
+    rarity,
+    stats,
+    description,
+  };
+}

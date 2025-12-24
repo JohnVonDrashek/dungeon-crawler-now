@@ -10,6 +10,9 @@ import { AudioSystem } from '../systems/AudioSystem';
 import { SaveSystem } from '../systems/SaveSystem';
 import { Item, RARITY_COLORS, ItemRarity } from '../systems/Item';
 import { InventoryUI } from '../ui/InventoryUI';
+import { MinimapUI } from '../ui/MinimapUI';
+import { LevelUpUI } from '../ui/LevelUpUI';
+import { RoomManager } from '../systems/RoomManager';
 
 export class GameScene extends Phaser.Scene {
   private player!: Player;
@@ -26,6 +29,9 @@ export class GameScene extends Phaser.Scene {
   private lootSystem!: LootSystem;
   private audioSystem!: AudioSystem;
   private inventoryUI!: InventoryUI;
+  private minimapUI!: MinimapUI;
+  private levelUpUI!: LevelUpUI;
+  private roomManager!: RoomManager;
   private floor: number = 1;
   private canExit: boolean = true;
   private isBossFloor: boolean = false;
@@ -69,9 +75,11 @@ export class GameScene extends Phaser.Scene {
     this.enemyProjectiles = this.physics.add.group({ runChildUpdate: true });
     this.itemDrops = this.physics.add.group();
 
-    // Create enemies
+    // Create enemies group (enemies spawn on room entry)
     this.enemies = this.physics.add.group({ runChildUpdate: false });
-    this.createEnemies();
+
+    // Create room manager for door/room mechanics
+    this.roomManager = new RoomManager(this, this.dungeon);
 
     this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
     this.cameras.main.setBounds(0, 0, DUNGEON_WIDTH * TILE_SIZE, DUNGEON_HEIGHT * TILE_SIZE);
@@ -86,6 +94,8 @@ export class GameScene extends Phaser.Scene {
     this.loadSavedGame();
 
     this.inventoryUI = new InventoryUI(this, this.player);
+    this.minimapUI = new MinimapUI(this, this.dungeon);
+    this.levelUpUI = new LevelUpUI(this, this.player);
     this.createHUD();
 
     // Boss floor announcement
@@ -95,9 +105,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(time: number, delta: number): void {
-    if (this.inventoryUI.getIsVisible()) return;
+    if (this.inventoryUI.getIsVisible() || this.levelUpUI.getIsVisible()) return;
 
     this.player.update(time, delta);
+
+    // Check for room entry (returns room if entering a new unvisited room)
+    const enteredRoom = this.roomManager.update(this.player.x, this.player.y);
+    if (enteredRoom) {
+      this.spawnEnemiesInRoom(enteredRoom);
+    }
 
     this.enemies.getChildren().forEach((child) => {
       const enemy = child as unknown as Enemy;
@@ -107,6 +123,7 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
+    this.minimapUI.update(this.player.x, this.player.y);
     this.updateHUD();
   }
 
@@ -133,69 +150,144 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private createEnemies(): void {
-    const spawnRoom = this.dungeon.rooms[0];
+  private spawnBoss(): void {
     const exitRoom = this.dungeon.rooms[this.dungeon.rooms.length - 1];
-
-    if (this.isBossFloor) {
-      // Boss floor - spawn boss in exit room
-      const boss = new BossEnemy(
-        this,
-        exitRoom.centerX * TILE_SIZE + TILE_SIZE / 2,
-        exitRoom.centerY * TILE_SIZE + TILE_SIZE / 2,
-        this.floor
-      );
-      boss.setTarget(this.player);
-      boss.setProjectileGroup(this.enemyProjectiles);
-      this.enemies.add(boss as unknown as Phaser.GameObjects.GameObject);
-      this.createHealthBar(boss);
-
-      // Add some regular enemies too
-      const enemyCount = Math.floor(this.floor / 2);
-      this.spawnMixedEnemies(enemyCount, spawnRoom);
-    } else {
-      // Regular floor - mixed enemies
-      const enemyCount = 3 + this.floor * 2;
-      this.spawnMixedEnemies(enemyCount, spawnRoom);
-    }
+    const boss = new BossEnemy(
+      this,
+      exitRoom.centerX * TILE_SIZE + TILE_SIZE / 2,
+      exitRoom.centerY * TILE_SIZE + TILE_SIZE / 2,
+      this.floor
+    );
+    boss.setTarget(this.player);
+    boss.setProjectileGroup(this.enemyProjectiles);
+    this.enemies.add(boss as unknown as Phaser.GameObjects.GameObject);
+    this.createHealthBar(boss);
   }
 
-  private spawnMixedEnemies(count: number, excludeRoom: Room): void {
-    const positions = this.dungeonGenerator.getEnemySpawnPositions(count, excludeRoom);
+  private spawnEnemiesInRoom(room: Room): void {
+    const exitRoom = this.dungeon.rooms[this.dungeon.rooms.length - 1];
+    const isBossRoom = this.isBossFloor && room.id === exitRoom.id;
 
-    positions.forEach((pos) => {
-      const x = pos.x * TILE_SIZE + TILE_SIZE / 2;
-      const y = pos.y * TILE_SIZE + TILE_SIZE / 2;
+    // Calculate enemy count based on floor and room size (or 1 for boss)
+    let enemyCount: number;
+    if (isBossRoom) {
+      enemyCount = 1;
+    } else {
+      const roomArea = room.width * room.height;
+      const baseCount = Math.max(1, Math.floor(roomArea / 150));
+      enemyCount = Math.min(baseCount + Math.floor(this.floor / 3), 6);
+    }
 
-      let enemy: Enemy;
+    // Generate spawn positions
+    const spawnPositions: { x: number; y: number }[] = [];
+    for (let i = 0; i < enemyCount; i++) {
+      const x = (room.x + 2 + Math.floor(Math.random() * (room.width - 4))) * TILE_SIZE + TILE_SIZE / 2;
+      const y = (room.y + 2 + Math.floor(Math.random() * (room.height - 4))) * TILE_SIZE + TILE_SIZE / 2;
+      spawnPositions.push({ x, y });
+    }
 
-      // Mix of enemy types based on floor and randomness
-      const roll = Math.random();
-      const hasRanged = this.floor >= 2;
-      const hasTank = this.floor >= 3;
+    // Activate the room immediately (closes doors)
+    this.roomManager.activateRoom(room.id, enemyCount);
+    this.audioSystem.play('sfx_hit', 0.3); // Door slam sound
+    this.shakeCamera(isBossRoom ? 8 : 3, isBossRoom ? 300 : 150);
 
-      if (hasTank && roll < 0.15) {
-        enemy = new TankEnemy(this, x, y, this.floor);
-      } else if (hasRanged && roll < 0.35) {
-        const ranged = new RangedEnemy(this, x, y, this.floor);
-        ranged.setProjectileGroup(this.enemyProjectiles);
-        enemy = ranged;
-      } else if (roll < 0.55) {
-        enemy = new FastEnemy(this, x, y, this.floor);
-      } else {
-        enemy = new Enemy(this, x, y, 'enemy', {
-          hp: 20 + this.floor * 5,
-          attack: 5 + this.floor * 2,
-          defense: 1 + Math.floor(this.floor / 2),
-          speed: 60 + this.floor * 5,
-          xpValue: 20 + this.floor * 5,
+    // Show spawn indicators
+    const indicators: Phaser.GameObjects.Graphics[] = [];
+    const indicatorSize = isBossRoom ? TILE_SIZE * 1.5 : TILE_SIZE * 0.8;
+    const indicatorColor = isBossRoom ? 0xfbbf24 : 0xff4444;
+
+    for (const pos of spawnPositions) {
+      const indicator = this.add.graphics();
+      indicator.setDepth(10);
+      indicators.push(indicator);
+
+      // Pulsing warning circle
+      let pulseProgress = 0;
+      const pulseTimer = this.time.addEvent({
+        delay: 50,
+        callback: () => {
+          pulseProgress += 0.1;
+          indicator.clear();
+
+          // Outer warning ring
+          const alpha = 0.3 + Math.sin(pulseProgress * 8) * 0.2;
+          indicator.lineStyle(isBossRoom ? 3 : 2, indicatorColor, alpha);
+          indicator.strokeCircle(pos.x, pos.y, indicatorSize);
+
+          // Inner fill
+          indicator.fillStyle(indicatorColor, 0.15 + Math.sin(pulseProgress * 8) * 0.1);
+          indicator.fillCircle(pos.x, pos.y, indicatorSize * 0.75);
+        },
+        repeat: -1,
+      });
+
+      // Store timer for cleanup
+      indicator.setData('pulseTimer', pulseTimer);
+    }
+
+    // Spawn enemies after delay (longer for boss)
+    const spawnDelay = isBossRoom ? 2000 : 1200;
+    this.time.delayedCall(spawnDelay, () => {
+      // Clean up indicators
+      for (const indicator of indicators) {
+        const timer = indicator.getData('pulseTimer') as Phaser.Time.TimerEvent;
+        if (timer) timer.destroy();
+        indicator.destroy();
+      }
+
+      // Spawn enemies at the positions
+      for (const pos of spawnPositions) {
+        let enemy: Enemy;
+        if (isBossRoom) {
+          enemy = new BossEnemy(this, pos.x, pos.y, this.floor);
+          enemy.setProjectileGroup(this.enemyProjectiles);
+        } else {
+          enemy = this.createEnemy(pos.x, pos.y);
+        }
+        enemy.setTarget(this.player);
+        this.enemies.add(enemy as unknown as Phaser.GameObjects.GameObject);
+        this.createHealthBar(enemy);
+
+        // Spawn pop effect
+        enemy.setScale(0);
+        this.tweens.add({
+          targets: enemy,
+          scale: 1,
+          duration: isBossRoom ? 400 : 200,
+          ease: 'Back.easeOut',
         });
       }
 
-      enemy.setTarget(this.player);
-      this.enemies.add(enemy as unknown as Phaser.GameObjects.GameObject);
-      this.createHealthBar(enemy);
+      this.audioSystem.play('sfx_enemy_death', 0.3); // Spawn sound
+
+      if (isBossRoom) {
+        this.shakeCamera(10, 200);
+      }
     });
+  }
+
+  private createEnemy(x: number, y: number): Enemy {
+    const roll = Math.random();
+    const hasRanged = this.floor >= 2;
+    const hasTank = this.floor >= 3;
+
+    if (hasTank && roll < 0.15) {
+      return new TankEnemy(this, x, y, this.floor);
+    } else if (hasRanged && roll < 0.35) {
+      const ranged = new RangedEnemy(this, x, y, this.floor);
+      ranged.setProjectileGroup(this.enemyProjectiles);
+      return ranged;
+    } else if (roll < 0.55) {
+      return new FastEnemy(this, x, y, this.floor);
+    } else {
+      return new Enemy(this, x, y, 'enemy', {
+        hp: 20 + this.floor * 5,
+        attack: 5 + this.floor * 2,
+        defense: 1 + Math.floor(this.floor / 2),
+        speed: 60 + this.floor * 5,
+        xpValue: 20 + this.floor * 5,
+      });
+    }
   }
 
   private createHealthBar(enemy: Enemy): void {
@@ -299,6 +391,10 @@ export class GameScene extends Phaser.Scene {
       this.handleItemPickup as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
       undefined, this
     );
+
+    // Door collision
+    this.physics.add.collider(this.player, this.roomManager.getDoorGroup());
+    this.physics.add.collider(this.enemies, this.roomManager.getDoorGroup());
   }
 
   private handlePlayerEnemyCollision(
@@ -313,6 +409,8 @@ export class GameScene extends Phaser.Scene {
     const result = this.combatSystem.calculateDamage(enemy, player);
     this.combatSystem.applyDamage(player, result);
     this.audioSystem.play('sfx_hurt', 0.4);
+    this.shakeCamera(5, 100);
+    this.showDamageNumber(player.x, player.y, result.damage, true);
   }
 
   private handleProjectileEnemyCollision(
@@ -325,6 +423,7 @@ export class GameScene extends Phaser.Scene {
     const result = this.combatSystem.calculateDamage(this.player, enemy);
     this.combatSystem.applyDamage(enemy, result);
     this.audioSystem.play('sfx_hit', 0.3);
+    this.showDamageNumber(enemy.x, enemy.y, result.damage, false);
 
     projectile.destroy();
   }
@@ -344,6 +443,8 @@ export class GameScene extends Phaser.Scene {
     const damage = projectile.getData('damage') || 5;
     player.takeDamage(damage);
     this.audioSystem.play('sfx_hurt', 0.4);
+    this.shakeCamera(5, 100);
+    this.showDamageNumber(player.x, player.y, damage, true);
     projectile.destroy();
   }
 
@@ -488,8 +589,16 @@ export class GameScene extends Phaser.Scene {
       this.player.gainXP(enemy.xpValue);
       this.audioSystem.play('sfx_enemy_death', 0.4);
       this.removeHealthBar(enemy);
+      this.spawnDeathParticles(enemy.x, enemy.y);
       this.enemiesKilled++;
       this.registry.set('enemiesKilled', this.enemiesKilled);
+
+      // Notify room manager (opens doors when room is cleared)
+      // Count remaining active enemies, excluding the one that just died
+      const remainingEnemies = this.enemies.getChildren().filter((e) =>
+        e.active && e !== (enemy as unknown as Phaser.GameObjects.GameObject)
+      ).length;
+      this.roomManager.onEnemyKilled(remainingEnemies);
 
       // Boss drops guaranteed rare+ loot
       if (enemy instanceof BossEnemy) {
@@ -515,6 +624,8 @@ export class GameScene extends Phaser.Scene {
         const result = this.combatSystem.calculateDamage(enemy, target);
         this.combatSystem.applyDamage(target, result);
         this.audioSystem.play('sfx_hurt', 0.4);
+        this.shakeCamera(5, 100);
+        this.showDamageNumber(target.x, target.y, result.damage, true);
       }
     });
 
@@ -523,14 +634,15 @@ export class GameScene extends Phaser.Scene {
     });
 
     // Listen for level up
-    this.player.on('levelUp', () => {
+    this.events.on('playerLevelUp', () => {
       this.audioSystem.play('sfx_levelup', 0.5);
+      this.showLevelUpNotification();
     });
   }
 
   private setupPlayerAttack(): void {
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      if (this.inventoryUI.getIsVisible()) return;
+      if (this.inventoryUI.getIsVisible() || this.levelUpUI.getIsVisible()) return;
 
       if (pointer.leftButtonDown()) {
         this.playerAttack(pointer);
@@ -549,8 +661,22 @@ export class GameScene extends Phaser.Scene {
     });
 
     this.input.keyboard.on('keydown-ESC', () => {
-      if (this.inventoryUI.getIsVisible()) {
+      if (this.levelUpUI.getIsVisible()) {
+        this.levelUpUI.hide();
+      } else if (this.inventoryUI.getIsVisible()) {
         this.inventoryUI.toggle();
+      }
+    });
+
+    // L: Open character / stat allocation menu
+    this.input.keyboard.on('keydown-L', () => {
+      if (this.inventoryUI.getIsVisible()) return;
+
+      if (this.levelUpUI.getIsVisible()) {
+        this.levelUpUI.hide();
+      } else {
+        this.player.setVelocity(0, 0);
+        this.levelUpUI.show();
       }
     });
 
@@ -647,6 +773,87 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  private shakeCamera(intensity: number, duration: number): void {
+    this.cameras.main.shake(duration, intensity / 1000);
+  }
+
+  private showDamageNumber(x: number, y: number, damage: number, isPlayer: boolean): void {
+    const color = isPlayer ? '#ff4444' : '#ffffff';
+    const text = this.add.text(x, y - 20, `-${damage}`, {
+      fontSize: '16px',
+      fontStyle: 'bold',
+      color: color,
+      stroke: '#000000',
+      strokeThickness: 3,
+    });
+    text.setOrigin(0.5);
+    text.setDepth(150);
+
+    this.tweens.add({
+      targets: text,
+      y: y - 50,
+      alpha: 0,
+      duration: 800,
+      ease: 'Power2',
+      onComplete: () => text.destroy(),
+    });
+  }
+
+  private spawnDeathParticles(x: number, y: number): void {
+    const colors = [0xff4444, 0xff6666, 0xcc3333, 0xffaaaa];
+    const particleCount = 8;
+
+    for (let i = 0; i < particleCount; i++) {
+      const color = Phaser.Math.RND.pick(colors);
+      const particle = this.add.circle(x, y, Phaser.Math.Between(2, 5), color);
+      particle.setDepth(100);
+
+      const angle = (i / particleCount) * Math.PI * 2;
+      const speed = Phaser.Math.Between(50, 120);
+      const targetX = x + Math.cos(angle) * speed;
+      const targetY = y + Math.sin(angle) * speed;
+
+      this.tweens.add({
+        targets: particle,
+        x: targetX,
+        y: targetY,
+        alpha: 0,
+        scale: 0.3,
+        duration: Phaser.Math.Between(300, 500),
+        ease: 'Power2',
+        onComplete: () => particle.destroy(),
+      });
+    }
+  }
+
+  private showLevelUpNotification(): void {
+    const text = this.add.text(
+      this.cameras.main.width / 2,
+      this.cameras.main.height * 0.3,
+      `LEVEL UP!\nPress L to allocate stats`,
+      {
+        fontSize: '24px',
+        color: '#fbbf24',
+        fontStyle: 'bold',
+        align: 'center',
+        stroke: '#000000',
+        strokeThickness: 3,
+      }
+    );
+    text.setOrigin(0.5);
+    text.setScrollFactor(0);
+    text.setDepth(200);
+
+    this.tweens.add({
+      targets: text,
+      alpha: 0,
+      y: text.y - 40,
+      duration: 2500,
+      delay: 1000,
+      onComplete: () => text.destroy(),
+    });
+  }
+
   private showDevMessage(msg: string): void {
     const text = this.add.text(10, 10, `[DEV] ${msg}`, {
       fontSize: '14px',
@@ -721,14 +928,20 @@ export class GameScene extends Phaser.Scene {
     const itemCount = this.player.inventory.getItemCount();
     const floorText = this.isBossFloor ? `Floor: ${this.floor} (BOSS)` : `Floor: ${this.floor}`;
 
-    this.hudText.setText([
+    const lines = [
       floorText,
       `HP: ${this.player.hp}/${this.player.maxHp}`,
       `Level: ${this.player.level}`,
       `XP: ${this.player.xp}/${this.player.xpToNextLevel}`,
       `ATK: ${this.player.attack} | DEF: ${this.player.defense}`,
       `Enemies: ${enemyCount} | Items: ${itemCount}`,
-    ].join('\n'));
+    ];
+
+    if (this.player.statPoints > 0) {
+      lines.push(`[L] ${this.player.statPoints} stat points!`);
+    }
+
+    this.hudText.setText(lines.join('\n'));
   }
 
   private handlePlayerDeath(): void {

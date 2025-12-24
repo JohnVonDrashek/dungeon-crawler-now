@@ -140,5 +140,16 @@ export class BootScene extends Phaser.Scene {
     itemGraphics.fillCircle(5, 5, 3);
     itemGraphics.generateTexture('item_drop', 12, 12);
     itemGraphics.destroy();
+
+    // Door (brown/red bar)
+    const doorGraphics = this.make.graphics({ x: 0, y: 0 });
+    doorGraphics.fillStyle(0x8b4513);
+    doorGraphics.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+    doorGraphics.lineStyle(2, 0x5c3317);
+    doorGraphics.strokeRect(1, 1, TILE_SIZE - 2, TILE_SIZE - 2);
+    doorGraphics.fillStyle(0xffd700);
+    doorGraphics.fillCircle(TILE_SIZE - 4, TILE_SIZE / 2, 2);
+    doorGraphics.generateTexture('door', TILE_SIZE, TILE_SIZE);
+    doorGraphics.destroy();
   }
 }

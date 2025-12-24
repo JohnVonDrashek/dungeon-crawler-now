@@ -7,6 +7,8 @@ export interface Room {
   height: number;
   centerX: number;
   centerY: number;
+  id: number;
+  doors: { x: number; y: number }[];
 }
 
 export interface DungeonData {
@@ -38,6 +40,9 @@ export class DungeonGenerator {
 
     // Connect rooms with corridors
     this.connectRooms();
+
+    // Find door positions for each room
+    this.findDoors();
 
     // Select spawn and exit points
     const spawnRoom = this.rooms[0];
@@ -74,6 +79,8 @@ export class DungeonGenerator {
         height: roomHeight,
         centerX: Math.floor(x + roomWidth / 2),
         centerY: Math.floor(y + roomHeight / 2),
+        id: this.rooms.length,
+        doors: [],
       };
 
       // Check for overlap with existing rooms
@@ -157,6 +164,73 @@ export class DungeonGenerator {
         }
       }
     }
+  }
+
+  private findDoors(): void {
+    for (const room of this.rooms) {
+      const doors: { x: number; y: number }[] = [];
+
+      // Check top edge - place doors in corridor (outside room)
+      // For horizontal edges, check for walls to left and right (perpendicular)
+      for (let x = room.x; x < room.x + room.width; x++) {
+        const corridorY = room.y - 1;
+        if (this.isFloor(x, corridorY) && this.isValidDoorway(x, corridorY, 'horizontal')) {
+          doors.push({ x, y: corridorY });
+        }
+      }
+
+      // Check bottom edge
+      for (let x = room.x; x < room.x + room.width; x++) {
+        const corridorY = room.y + room.height;
+        if (this.isFloor(x, corridorY) && this.isValidDoorway(x, corridorY, 'horizontal')) {
+          doors.push({ x, y: corridorY });
+        }
+      }
+
+      // Check left edge
+      // For vertical edges, check for walls above and below (perpendicular)
+      for (let y = room.y; y < room.y + room.height; y++) {
+        const corridorX = room.x - 1;
+        if (this.isFloor(corridorX, y) && this.isValidDoorway(corridorX, y, 'vertical')) {
+          doors.push({ x: corridorX, y });
+        }
+      }
+
+      // Check right edge
+      for (let y = room.y; y < room.y + room.height; y++) {
+        const corridorX = room.x + room.width;
+        if (this.isFloor(corridorX, y) && this.isValidDoorway(corridorX, y, 'vertical')) {
+          doors.push({ x: corridorX, y });
+        }
+      }
+
+      room.doors = doors;
+    }
+  }
+
+  // Check if a position is a valid doorway by looking for walls on perpendicular sides
+  private isValidDoorway(x: number, y: number, orientation: 'horizontal' | 'vertical'): boolean {
+    if (orientation === 'horizontal') {
+      // For corridors entering from top/bottom, check walls to left OR right
+      // (corridor is typically 2 tiles wide, so we check if at least one side has a wall nearby)
+      const hasLeftWall = this.isWall(x - 1, y) || this.isWall(x - 2, y);
+      const hasRightWall = this.isWall(x + 1, y) || this.isWall(x + 2, y);
+      return hasLeftWall || hasRightWall;
+    } else {
+      // For corridors entering from left/right, check walls above OR below
+      const hasTopWall = this.isWall(x, y - 1) || this.isWall(x, y - 2);
+      const hasBottomWall = this.isWall(x, y + 1) || this.isWall(x, y + 2);
+      return hasTopWall || hasBottomWall;
+    }
+  }
+
+  private isWall(x: number, y: number): boolean {
+    if (y < 0 || y >= this.height || x < 0 || x >= this.width) return true;
+    return this.tiles[y][x] === 1;
+  }
+
+  private isFloor(x: number, y: number): boolean {
+    return y >= 0 && y < this.height && x >= 0 && x < this.width && this.tiles[y][x] === 0;
   }
 
   // Get valid spawn positions for enemies

@@ -176,21 +176,47 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     }
   }
 
+  public statPoints: number = 0;
+
   private levelUp(): void {
     this.xp -= this.xpToNextLevel;
     this.level++;
     this.xpToNextLevel = Math.floor(this.xpToNextLevel * 1.5);
 
-    // Base stat increases
-    this.baseMaxHp += 10;
-    this.baseAttack += 2;
-    this.baseDefense += 1;
+    // Give stat points instead of auto-applying
+    this.statPoints += 3;
 
+    // Small base HP increase
+    this.baseMaxHp += 5;
     this.recalculateStats();
     this.hp = this.maxHp; // Full heal on level up
 
-    // Visual feedback
-    this.scene.cameras.main.flash(200, 255, 255, 255);
+    // Emit event for stat allocation UI
+    this.scene.events.emit('playerLevelUp', this);
+  }
+
+  allocateStat(stat: 'hp' | 'attack' | 'defense' | 'speed'): boolean {
+    if (this.statPoints <= 0) return false;
+
+    this.statPoints--;
+
+    switch (stat) {
+      case 'hp':
+        this.baseMaxHp += 10;
+        break;
+      case 'attack':
+        this.baseAttack += 2;
+        break;
+      case 'defense':
+        this.baseDefense += 1;
+        break;
+      case 'speed':
+        this.baseSpeed += 10;
+        break;
+    }
+
+    this.recalculateStats();
+    return true;
   }
 
   recalculateStats(): void {

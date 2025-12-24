@@ -1,33 +1,14 @@
-import { Item, ItemRarity, createItem, ITEM_TEMPLATES } from './Item';
+import { Item, ItemRarity, createItem, generateProceduralItem } from './Item';
 
-interface LootTableEntry {
-  templateId: string;
-  weight: number;
-}
-
-const LOOT_TABLE: LootTableEntry[] = [
-  // Common items (high weight)
-  { templateId: 'health_potion', weight: 30 },
-  { templateId: 'rusty_sword', weight: 15 },
-  { templateId: 'leather_armor', weight: 15 },
-  { templateId: 'wooden_ring', weight: 15 },
-
-  // Uncommon items (medium weight)
-  { templateId: 'large_health_potion', weight: 10 },
-  { templateId: 'iron_sword', weight: 8 },
-  { templateId: 'chainmail', weight: 8 },
-  { templateId: 'speed_boots', weight: 8 },
-
-  // Rare items (low weight)
-  { templateId: 'flame_blade', weight: 4 },
-  { templateId: 'plate_armor', weight: 4 },
-  { templateId: 'power_amulet', weight: 4 },
-
-  // Epic items (very low weight)
-  { templateId: 'doom_cleaver', weight: 1 },
-  { templateId: 'dragon_scale', weight: 1 },
-  { templateId: 'ring_of_legends', weight: 1 },
-];
+// Rarity weights based on floor
+const RARITY_WEIGHTS = {
+  base: {
+    [ItemRarity.COMMON]: 60,
+    [ItemRarity.UNCOMMON]: 25,
+    [ItemRarity.RARE]: 12,
+    [ItemRarity.EPIC]: 3,
+  },
+};
 
 export class LootSystem {
   private dropChance: number;
@@ -40,64 +21,68 @@ export class LootSystem {
     return Math.random() < this.dropChance;
   }
 
-  generateLoot(floorBonus: number = 0): Item | null {
+  generateLoot(floor: number = 1): Item | null {
     if (!this.shouldDrop()) {
       return null;
     }
 
-    // Calculate total weight
-    const totalWeight = LOOT_TABLE.reduce((sum, entry) => sum + entry.weight, 0);
-
-    // Higher floors slightly increase rare drop chances
-    const roll = Math.random() * totalWeight * Math.max(0.5, 1 - floorBonus * 0.02);
-
-    let cumulative = 0;
-    for (const entry of LOOT_TABLE) {
-      cumulative += entry.weight;
-      if (roll < cumulative) {
-        return createItem(entry.templateId);
-      }
+    // 30% chance for potion, 70% for procedural equipment
+    if (Math.random() < 0.3) {
+      return Math.random() < 0.7
+        ? createItem('health_potion')
+        : createItem('large_health_potion');
     }
 
-    // Fallback to health potion
-    return createItem('health_potion');
+    const rarity = this.rollRarity(floor);
+    return generateProceduralItem(floor, rarity);
   }
 
   // Generate guaranteed loot (for chests, bosses, etc.)
   generateGuaranteedLoot(minRarity: ItemRarity = ItemRarity.COMMON): Item {
-    const validItems = LOOT_TABLE.filter((entry) => {
-      const template = ITEM_TEMPLATES[entry.templateId];
-      return this.rarityValue(template.rarity) >= this.rarityValue(minRarity);
-    });
+    // Roll for rarity at or above minimum
+    const rarities = [ItemRarity.COMMON, ItemRarity.UNCOMMON, ItemRarity.RARE, ItemRarity.EPIC];
+    const minIndex = rarities.indexOf(minRarity);
+    const validRarities = rarities.slice(minIndex);
 
-    if (validItems.length === 0) {
-      return createItem('health_potion')!;
-    }
-
-    const totalWeight = validItems.reduce((sum, entry) => sum + entry.weight, 0);
+    // Weight higher rarities less
+    const weights = validRarities.map((_, i) => Math.max(1, 10 - i * 3));
+    const totalWeight = weights.reduce((a, b) => a + b, 0);
     const roll = Math.random() * totalWeight;
 
     let cumulative = 0;
-    for (const entry of validItems) {
-      cumulative += entry.weight;
+    let chosenRarity = minRarity;
+    for (let i = 0; i < validRarities.length; i++) {
+      cumulative += weights[i];
       if (roll < cumulative) {
-        return createItem(entry.templateId)!;
+        chosenRarity = validRarities[i];
+        break;
       }
     }
 
-    return createItem(validItems[0].templateId)!;
+    return generateProceduralItem(10, chosenRarity); // Use floor 10 for good stats
   }
 
-  private rarityValue(rarity: ItemRarity): number {
-    switch (rarity) {
-      case ItemRarity.COMMON:
-        return 0;
-      case ItemRarity.UNCOMMON:
-        return 1;
-      case ItemRarity.RARE:
-        return 2;
-      case ItemRarity.EPIC:
-        return 3;
+  private rollRarity(floor: number): ItemRarity {
+    const weights = { ...RARITY_WEIGHTS.base };
+
+    // Higher floors increase rare/epic chances
+    const floorBonus = Math.min(floor * 2, 30);
+    weights[ItemRarity.COMMON] = Math.max(20, weights[ItemRarity.COMMON] - floorBonus);
+    weights[ItemRarity.UNCOMMON] += Math.floor(floorBonus * 0.4);
+    weights[ItemRarity.RARE] += Math.floor(floorBonus * 0.4);
+    weights[ItemRarity.EPIC] += Math.floor(floorBonus * 0.2);
+
+    const totalWeight = Object.values(weights).reduce((a, b) => a + b, 0);
+    const roll = Math.random() * totalWeight;
+
+    let cumulative = 0;
+    for (const [rarity, weight] of Object.entries(weights)) {
+      cumulative += weight;
+      if (roll < cumulative) {
+        return rarity as ItemRarity;
+      }
     }
+
+    return ItemRarity.COMMON;
   }
 }
