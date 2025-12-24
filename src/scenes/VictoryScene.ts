@@ -6,6 +6,7 @@ interface GameStats {
   level: number;
   enemiesKilled: number;
   itemsCollected: number;
+  allWorldsComplete?: boolean;
 }
 
 export class VictoryScene extends Phaser.Scene {
@@ -14,6 +15,7 @@ export class VictoryScene extends Phaser.Scene {
     level: 1,
     enemiesKilled: 0,
     itemsCollected: 0,
+    allWorldsComplete: false,
   };
 
   constructor() {
@@ -27,26 +29,46 @@ export class VictoryScene extends Phaser.Scene {
   create(): void {
     const width = this.cameras.main.width;
     const height = this.cameras.main.height;
+    const isWorldVictory = this.stats.allWorldsComplete;
 
-    // Golden background gradient effect
+    // Background
     this.add.rectangle(width / 2, height / 2, width, height, 0x1a1a2e);
 
     // Particles for celebration
-    this.createParticles();
+    this.createParticles(isWorldVictory);
 
     // Victory title
-    const title = this.add.text(width / 2, height * 0.18, 'VICTORY!', {
+    const titleText = isWorldVictory ? 'ASCENSION!' : 'VICTORY!';
+    const titleColor = isWorldVictory ? '#ffd700' : '#fbbf24';
+    const title = this.add.text(width / 2, height * 0.15, titleText, {
       fontSize: '72px',
       fontFamily: 'monospace',
-      color: '#fbbf24',
+      color: titleColor,
       stroke: '#000000',
       strokeThickness: 6,
     });
     title.setOrigin(0.5);
 
+    // Animate title for world victory
+    if (isWorldVictory) {
+      this.tweens.add({
+        targets: title,
+        scale: { from: 1, to: 1.05 },
+        duration: 1500,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    }
+
     // Victory message
-    const message = this.add.text(width / 2, height * 0.32,
-      'You have completed the purification\nand overcome the final trial!', {
+    let messageText: string;
+    if (isWorldVictory) {
+      messageText = 'You have conquered all Seven Deadly Sins\nand purified your soul!';
+    } else {
+      messageText = 'You have completed the purification\nand overcome the final trial!';
+    }
+    const message = this.add.text(width / 2, height * 0.30, messageText, {
       fontSize: '18px',
       fontFamily: 'monospace',
       color: '#e5e7eb',
@@ -54,21 +76,38 @@ export class VictoryScene extends Phaser.Scene {
     });
     message.setOrigin(0.5);
 
-    // Stats box
-    const statsBox = this.add.rectangle(width / 2, height * 0.54, 320, 200, 0x1f2937);
-    statsBox.setStrokeStyle(3, 0xfbbf24);
+    // List of conquered sins for world victory
+    if (isWorldVictory) {
+      const sins = [
+        'Pride', 'Greed', 'Wrath', 'Sloth', 'Envy', 'Gluttony', 'Lust'
+      ];
+      const sinsText = this.add.text(width / 2, height * 0.42, sins.join('  ·  '), {
+        fontSize: '12px',
+        fontFamily: 'monospace',
+        color: '#fbbf24',
+        align: 'center',
+      });
+      sinsText.setOrigin(0.5);
+    }
 
-    const statsTitle = this.add.text(width / 2, height * 0.43, "- Soul's Journey -", {
+    // Stats box
+    const statsBoxY = isWorldVictory ? height * 0.58 : height * 0.54;
+    const statsBox = this.add.rectangle(width / 2, statsBoxY, 320, 200, 0x1f2937);
+    statsBox.setStrokeStyle(3, isWorldVictory ? 0xffd700 : 0xfbbf24);
+
+    const statsTitleText = isWorldVictory ? "- Redeemed Soul -" : "- Soul's Journey -";
+    const statsTitle = this.add.text(width / 2, statsBoxY - 55, statsTitleText, {
       fontSize: '22px',
       fontFamily: 'monospace',
-      color: '#fbbf24',
+      color: isWorldVictory ? '#ffd700' : '#fbbf24',
     });
     statsTitle.setOrigin(0.5);
 
-    const statsText = this.add.text(width / 2, height * 0.55, [
-      `Stages Cleared: ${this.stats.floor}`,
+    const stageLabel = isWorldVictory ? 'Floors Conquered' : 'Stages Cleared';
+    const statsText = this.add.text(width / 2, statsBoxY + 5, [
+      `${stageLabel}: ${this.stats.floor}`,
       `Final Level: ${this.stats.level}`,
-      `Trials Overcome: ${this.stats.enemiesKilled}`,
+      `Sins Vanquished: ${this.stats.enemiesKilled}`,
       `Treasures Found: ${this.stats.itemsCollected}`,
     ].join('\n'), {
       fontSize: '18px',
@@ -79,14 +118,18 @@ export class VictoryScene extends Phaser.Scene {
     });
     statsText.setOrigin(0.5);
 
-    // Play again button
-    this.createButton(width / 2, height * 0.78, 'Play Again', () => {
+    // Buttons
+    const buttonY1 = isWorldVictory ? height * 0.82 : height * 0.78;
+    const buttonY2 = isWorldVictory ? height * 0.92 : height * 0.88;
+
+    this.createButton(width / 2, buttonY1, 'New Journey', () => {
       SaveSystem.deleteSave();
       this.registry.set('floor', 1);
-      this.scene.start('GameScene');
+      this.registry.remove('currentWorld');
+      this.scene.start('HubScene');
     });
 
-    this.createButton(width / 2, height * 0.88, 'Main Menu', () => {
+    this.createButton(width / 2, buttonY2, 'Main Menu', () => {
       this.scene.start('MenuScene');
     });
 
@@ -97,15 +140,22 @@ export class VictoryScene extends Phaser.Scene {
     SaveSystem.deleteSave();
   }
 
-  private createParticles(): void {
+  private createParticles(isWorldVictory?: boolean): void {
     const width = this.cameras.main.width;
 
+    // Different colors for world victory (more golden/white) vs regular (amber)
+    const colors = isWorldVictory
+      ? [0xffd700, 0xffffff, 0xfef3c7, 0xfbbf24, 0xf0e68c]
+      : [0xfbbf24, 0xf59e0b, 0xfcd34d, 0xfef3c7];
+
+    const particleCount = isWorldVictory ? 50 : 30;
+
     // Create simple particle effect using graphics
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < particleCount; i++) {
       const x = Phaser.Math.Between(0, width);
       const y = Phaser.Math.Between(-50, -10);
-      const size = Phaser.Math.Between(2, 6);
-      const color = Phaser.Math.RND.pick([0xfbbf24, 0xf59e0b, 0xfcd34d, 0xfef3c7]);
+      const size = Phaser.Math.Between(2, isWorldVictory ? 8 : 6);
+      const color = Phaser.Math.RND.pick(colors);
 
       const particle = this.add.circle(x, y, size, color);
 

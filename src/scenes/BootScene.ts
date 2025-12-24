@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { TILE_SIZE } from '../utils/constants';
 import { AudioSystem } from '../systems/AudioSystem';
+import { getAllWorlds, getWorldConfig } from '../config/WorldConfig';
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -930,6 +931,9 @@ export class BootScene extends Phaser.Scene {
     tavernWallGraphics.generateTexture('wall_tavern', TILE_SIZE, TILE_SIZE);
     tavernWallGraphics.destroy();
 
+    // === WORLD-SPECIFIC TEXTURES (7 Sin Worlds) ===
+    this.createWorldTextures();
+
     // Guardian Angel (shopkeeper)
     const shopkeeperGraphics = this.make.graphics({ x: 0, y: 0 });
     // Wings (behind body)
@@ -1071,5 +1075,67 @@ export class BootScene extends Phaser.Scene {
     candleGraphics.fillCircle(8, 1, 1);
     candleGraphics.generateTexture('candle', TILE_SIZE, TILE_SIZE);
     candleGraphics.destroy();
+  }
+
+  /**
+   * Create floor and wall textures for each of the 7 sin worlds
+   */
+  private createWorldTextures(): void {
+    for (const world of getAllWorlds()) {
+      const config = getWorldConfig(world);
+      const { floor: floorColor, wall: wallColor, primary: accentColor } = config.colors;
+
+      // Floor texture for this world
+      const floorGraphics = this.make.graphics({ x: 0, y: 0 });
+      floorGraphics.fillStyle(floorColor);
+      floorGraphics.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+      // Add subtle grid lines
+      floorGraphics.lineStyle(1, this.lightenColor(floorColor, 0.15));
+      floorGraphics.strokeRect(0, 0, TILE_SIZE, TILE_SIZE);
+      // Add subtle accent pattern
+      floorGraphics.fillStyle(accentColor, 0.1);
+      floorGraphics.fillRect(6, 6, 4, 4);
+      floorGraphics.generateTexture(`floor_${world}`, TILE_SIZE, TILE_SIZE);
+      floorGraphics.destroy();
+
+      // Wall texture for this world
+      const wallGraphics = this.make.graphics({ x: 0, y: 0 });
+      wallGraphics.fillStyle(wallColor);
+      wallGraphics.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+      // Add brick-like pattern
+      wallGraphics.lineStyle(1, this.darkenColor(wallColor, 0.2));
+      wallGraphics.strokeRect(0, 0, TILE_SIZE, TILE_SIZE);
+      wallGraphics.moveTo(0, TILE_SIZE / 2);
+      wallGraphics.lineTo(TILE_SIZE, TILE_SIZE / 2);
+      wallGraphics.stroke();
+      wallGraphics.moveTo(TILE_SIZE / 2, 0);
+      wallGraphics.lineTo(TILE_SIZE / 2, TILE_SIZE / 2);
+      wallGraphics.stroke();
+      // Add accent trim at top
+      wallGraphics.fillStyle(accentColor, 0.3);
+      wallGraphics.fillRect(0, 0, TILE_SIZE, 2);
+      wallGraphics.generateTexture(`wall_${world}`, TILE_SIZE, TILE_SIZE);
+      wallGraphics.destroy();
+    }
+  }
+
+  /**
+   * Lighten a color by a percentage
+   */
+  private lightenColor(color: number, percent: number): number {
+    const r = Math.min(255, ((color >> 16) & 0xff) + 255 * percent);
+    const g = Math.min(255, ((color >> 8) & 0xff) + 255 * percent);
+    const b = Math.min(255, (color & 0xff) + 255 * percent);
+    return (Math.floor(r) << 16) | (Math.floor(g) << 8) | Math.floor(b);
+  }
+
+  /**
+   * Darken a color by a percentage
+   */
+  private darkenColor(color: number, percent: number): number {
+    const r = ((color >> 16) & 0xff) * (1 - percent);
+    const g = ((color >> 8) & 0xff) * (1 - percent);
+    const b = (color & 0xff) * (1 - percent);
+    return (Math.floor(r) << 16) | (Math.floor(g) << 8) | Math.floor(b);
   }
 }

@@ -1,9 +1,11 @@
 import { InventorySystem, Equipment } from './InventorySystem';
 import { Item } from './Item';
+import { GameProgression, createDefaultProgression } from './ProgressionSystem';
+import { SinWorld } from '../config/WorldConfig';
 
 interface SaveData {
   version: number;
-  floor: number;
+  progression: GameProgression;
   player: {
     level: number;
     xp: number;
@@ -22,12 +24,21 @@ interface SaveData {
   timestamp: number;
 }
 
+// Legacy save format for migration
+interface LegacySaveData {
+  version: number;
+  floor: number;
+  player: SaveData['player'];
+  inventory: SaveData['inventory'];
+  timestamp: number;
+}
+
 const SAVE_KEY = 'dungeon_crawler_save';
-const SAVE_VERSION = 1;
+const SAVE_VERSION = 2;
 
 export class SaveSystem {
   static save(
-    floor: number,
+    progression: GameProgression,
     playerData: {
       level: number;
       xp: number;
@@ -44,7 +55,7 @@ export class SaveSystem {
     try {
       const saveData: SaveData = {
         version: SAVE_VERSION,
-        floor,
+        progression,
         player: playerData,
         inventory: {
           items: inventory.getItems(),
@@ -66,14 +77,30 @@ export class SaveSystem {
       const saved = localStorage.getItem(SAVE_KEY);
       if (!saved) return null;
 
-      const data = JSON.parse(saved) as SaveData;
+      const rawData = JSON.parse(saved);
 
-      // Version check for future compatibility
-      if (data.version !== SAVE_VERSION) {
-        console.warn('Save version mismatch, may need migration');
+      // Migrate from version 1 (linear floor) to version 2 (progression)
+      if (rawData.version === 1) {
+        console.log('Migrating save from v1 to v2...');
+        const legacyData = rawData as LegacySaveData;
+
+        // Create fresh progression (old linear progress doesn't map to new system)
+        const progression = createDefaultProgression();
+
+        const migratedData: SaveData = {
+          version: SAVE_VERSION,
+          progression,
+          player: legacyData.player,
+          inventory: legacyData.inventory,
+          timestamp: legacyData.timestamp,
+        };
+
+        // Save the migrated data
+        localStorage.setItem(SAVE_KEY, JSON.stringify(migratedData));
+        return migratedData;
       }
 
-      return data;
+      return rawData as SaveData;
     } catch (error) {
       console.error('Failed to load game:', error);
       return null;
@@ -88,14 +115,25 @@ export class SaveSystem {
     localStorage.removeItem(SAVE_KEY);
   }
 
-  static getSaveInfo(): { floor: number; level: number; timestamp: number } | null {
+  static getSaveInfo(): {
+    level: number;
+    timestamp: number;
+    worldsCompleted: number;
+    activeWorld: SinWorld | null;
+    activeFloor: number | null;
+  } | null {
     const data = this.load();
     if (!data) return null;
 
+    const completedCount = Object.values(data.progression.worldProgress)
+      .filter(wp => wp.completed).length;
+
     return {
-      floor: data.floor,
       level: data.player.level,
       timestamp: data.timestamp,
+      worldsCompleted: completedCount,
+      activeWorld: data.progression.activeRun?.world ?? null,
+      activeFloor: data.progression.activeRun?.floor ?? null,
     };
   }
 

@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { SaveSystem } from '../systems/SaveSystem';
 import { SettingsUI } from '../ui/SettingsUI';
+import { getWorldConfig } from '../config/WorldConfig';
 
 export class MenuScene extends Phaser.Scene {
   private settingsUI!: SettingsUI;
@@ -45,27 +46,37 @@ export class MenuScene extends Phaser.Scene {
     // New Game button
     this.createButton(width / 2, height * 0.65, 'New Game', () => {
       SaveSystem.deleteSave();
-      this.registry.set('floor', 1);
-      this.scene.start('GameScene');
+      this.scene.start('HubScene');
     });
 
     // Continue button (only if save exists)
     const saveInfo = SaveSystem.getSaveInfo();
     if (saveInfo) {
       this.createButton(width / 2, height * 0.75, 'Continue', () => {
-        // Set floor before starting so enemies spawn correctly
-        this.registry.set('floor', saveInfo.floor);
-        this.scene.start('GameScene');
+        // If there's an active run, resume it; otherwise go to hub
+        if (saveInfo.activeWorld && saveInfo.activeFloor) {
+          this.registry.set('currentWorld', saveInfo.activeWorld);
+          this.registry.set('floor', saveInfo.activeFloor);
+          this.scene.start('GameScene');
+        } else {
+          this.scene.start('HubScene');
+        }
       });
 
       // Show save info
-      const saveText = this.add.text(width / 2, height * 0.81,
-        `Stage ${saveInfo.floor} | Level ${saveInfo.level}`, {
+      let saveText: string;
+      if (saveInfo.activeWorld && saveInfo.activeFloor) {
+        const worldConfig = getWorldConfig(saveInfo.activeWorld);
+        saveText = `${worldConfig.name} Floor ${saveInfo.activeFloor} | Level ${saveInfo.level}`;
+      } else {
+        saveText = `${saveInfo.worldsCompleted}/7 Worlds | Level ${saveInfo.level}`;
+      }
+      const saveTextObj = this.add.text(width / 2, height * 0.81, saveText, {
         fontSize: '14px',
         fontFamily: 'monospace',
         color: '#6b7280',
       });
-      saveText.setOrigin(0.5);
+      saveTextObj.setOrigin(0.5);
     }
 
     // Controls info

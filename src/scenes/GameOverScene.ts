@@ -1,10 +1,12 @@
 import Phaser from 'phaser';
+import { SinWorld, getWorldConfig } from '../config/WorldConfig';
 
 interface GameStats {
   floor: number;
   level: number;
   enemiesKilled: number;
   itemsCollected: number;
+  currentWorld?: SinWorld | null;
 }
 
 export class GameOverScene extends Phaser.Scene {
@@ -13,6 +15,7 @@ export class GameOverScene extends Phaser.Scene {
     level: 1,
     enemiesKilled: 0,
     itemsCollected: 0,
+    currentWorld: null,
   };
 
   constructor() {
@@ -26,6 +29,7 @@ export class GameOverScene extends Phaser.Scene {
   create(): void {
     const width = this.cameras.main.width;
     const height = this.cameras.main.height;
+    const isWorldMode = !!this.stats.currentWorld;
 
     // Dark overlay
     this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.8);
@@ -40,8 +44,13 @@ export class GameOverScene extends Phaser.Scene {
     });
     title.setOrigin(0.5);
 
-    // Death message
-    const deathMsg = this.add.text(width / 2, height * 0.32, 'Your journey has ended...', {
+    // Death message - include world name if in world mode
+    let deathMessage = 'Your journey has ended...';
+    if (isWorldMode) {
+      const worldConfig = getWorldConfig(this.stats.currentWorld!);
+      deathMessage = `Fallen in ${worldConfig.name}...`;
+    }
+    const deathMsg = this.add.text(width / 2, height * 0.32, deathMessage, {
       fontSize: '18px',
       fontFamily: 'monospace',
       color: '#9ca3af',
@@ -59,8 +68,10 @@ export class GameOverScene extends Phaser.Scene {
     });
     statsTitle.setOrigin(0.5);
 
+    // Build stats text based on mode
+    const stageLabel = isWorldMode ? `Floor Reached: ${this.stats.floor}` : `Stage Reached: ${this.stats.floor}`;
     const statsText = this.add.text(width / 2, height * 0.52, [
-      `Stage Reached: ${this.stats.floor}`,
+      stageLabel,
       `Level: ${this.stats.level}`,
       `Enemies Overcome: ${this.stats.enemiesKilled}`,
       `Items Found: ${this.stats.itemsCollected}`,
@@ -73,15 +84,25 @@ export class GameOverScene extends Phaser.Scene {
     });
     statsText.setOrigin(0.5);
 
-    // Buttons
-    this.createButton(width / 2, height * 0.75, 'Try Again', () => {
-      this.registry.set('floor', 1);
-      this.scene.start('GameScene');
-    });
+    // Buttons - different options for world mode
+    if (isWorldMode) {
+      this.createButton(width / 2, height * 0.75, 'Return to Hub', () => {
+        this.scene.start('HubScene');
+      });
 
-    this.createButton(width / 2, height * 0.85, 'Main Menu', () => {
-      this.scene.start('MenuScene');
-    });
+      this.createButton(width / 2, height * 0.85, 'Main Menu', () => {
+        this.scene.start('MenuScene');
+      });
+    } else {
+      this.createButton(width / 2, height * 0.75, 'Try Again', () => {
+        this.registry.set('floor', 1);
+        this.scene.start('GameScene');
+      });
+
+      this.createButton(width / 2, height * 0.85, 'Main Menu', () => {
+        this.scene.start('MenuScene');
+      });
+    }
 
     // Fade in
     this.cameras.main.fadeIn(500);

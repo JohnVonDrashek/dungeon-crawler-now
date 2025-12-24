@@ -4,6 +4,7 @@ import { BootScene } from './scenes/BootScene';
 import { MenuScene } from './scenes/MenuScene';
 import { GameScene } from './scenes/GameScene';
 import { ShopScene } from './scenes/ShopScene';
+import { HubScene } from './scenes/HubScene';
 import { GameOverScene } from './scenes/GameOverScene';
 import { VictoryScene } from './scenes/VictoryScene';
 import UIPlugin from 'phaser3-rex-plugins/templates/ui/ui-plugin.js';
@@ -22,7 +23,7 @@ export const gameConfig: Phaser.Types.Core.GameConfig = {
       debug: false,
     },
   },
-  scene: [BootScene, MenuScene, GameScene, ShopScene, GameOverScene, VictoryScene],
+  scene: [BootScene, MenuScene, HubScene, GameScene, ShopScene, GameOverScene, VictoryScene],
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,

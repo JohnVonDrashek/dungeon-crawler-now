@@ -6,10 +6,15 @@ import {
   SlothEnemy, GluttonyEnemy, GreedEnemy, EnvyEnemy,
   WrathEnemy, LustEnemy, PrideEnemy
 } from '../entities/enemies/EnemyTypes';
+import {
+  PrideBoss, GreedBoss, WrathBoss, SlothBoss,
+  EnvyBoss, GluttonyBoss, LustBoss
+} from '../entities/enemies/SinBosses';
 import { Room, RoomType } from './DungeonGenerator';
 import { RoomManager } from './RoomManager';
 import { AudioSystem } from './AudioSystem';
 import { TILE_SIZE } from '../utils/constants';
+import { SinWorld, getWorldConfig } from '../config/WorldConfig';
 
 export class EnemySpawnManager {
   private scene: Phaser.Scene;
@@ -21,6 +26,7 @@ export class EnemySpawnManager {
   private enemies!: Phaser.Physics.Arcade.Group;
   private healthBars: Map<Enemy, Phaser.GameObjects.Container> = new Map();
   private floor: number;
+  private currentWorld: SinWorld | null;
 
   constructor(
     scene: Phaser.Scene,
@@ -28,7 +34,8 @@ export class EnemySpawnManager {
     roomManager: RoomManager,
     audioSystem: AudioSystem,
     enemyProjectiles: Phaser.Physics.Arcade.Group,
-    floor: number
+    floor: number,
+    currentWorld: SinWorld | null = null
   ) {
     this.scene = scene;
     this.player = player;
@@ -36,6 +43,7 @@ export class EnemySpawnManager {
     this.audioSystem = audioSystem;
     this.enemyProjectiles = enemyProjectiles;
     this.floor = floor;
+    this.currentWorld = currentWorld;
   }
 
   create(): void {
@@ -127,9 +135,7 @@ export class EnemySpawnManager {
       for (const pos of spawnPositions) {
         let enemy: Enemy;
         if (isBossRoom) {
-          const boss = new BossEnemy(this.scene, pos.x, pos.y, this.floor);
-          boss.setProjectileGroup(this.enemyProjectiles);
-          enemy = boss;
+          enemy = this.createBoss(pos.x, pos.y);
         } else if (isChallengeRoom) {
           // Challenge rooms spawn tougher enemy variants
           enemy = this.createChallengeEnemy(pos.x, pos.y);
@@ -164,6 +170,129 @@ export class EnemySpawnManager {
   }
 
   private createEnemy(x: number, y: number): Enemy {
+    // If in a world, bias toward that world's primary enemy (60% chance)
+    if (this.currentWorld) {
+      return this.createWorldEnemy(x, y);
+    }
+
+    // Legacy mode: original spawn logic
+    return this.createLegacyEnemy(x, y);
+  }
+
+  private createBoss(x: number, y: number): Enemy {
+    // If in a world, spawn the world-specific sin boss
+    if (this.currentWorld) {
+      return this.createSinBoss(x, y);
+    }
+
+    // Legacy mode: standard boss
+    const boss = new BossEnemy(this.scene, x, y, this.floor);
+    boss.setProjectileGroup(this.enemyProjectiles);
+    return boss;
+  }
+
+  private createSinBoss(x: number, y: number): Enemy {
+    let boss: Enemy;
+
+    switch (this.currentWorld) {
+      case SinWorld.PRIDE:
+        boss = new PrideBoss(this.scene, x, y, this.floor);
+        break;
+      case SinWorld.GREED:
+        boss = new GreedBoss(this.scene, x, y, this.floor);
+        break;
+      case SinWorld.WRATH:
+        boss = new WrathBoss(this.scene, x, y, this.floor);
+        break;
+      case SinWorld.SLOTH:
+        boss = new SlothBoss(this.scene, x, y, this.floor);
+        break;
+      case SinWorld.ENVY:
+        boss = new EnvyBoss(this.scene, x, y, this.floor);
+        break;
+      case SinWorld.GLUTTONY:
+        boss = new GluttonyBoss(this.scene, x, y, this.floor);
+        break;
+      case SinWorld.LUST:
+        boss = new LustBoss(this.scene, x, y, this.floor);
+        break;
+      default:
+        boss = new BossEnemy(this.scene, x, y, this.floor);
+    }
+
+    // Set projectile group for bosses that use it
+    if ('setProjectileGroup' in boss) {
+      (boss as BossEnemy).setProjectileGroup(this.enemyProjectiles);
+    }
+
+    return boss;
+  }
+
+  private createWorldEnemy(x: number, y: number): Enemy {
+    const worldConfig = getWorldConfig(this.currentWorld!);
+    const roll = Math.random();
+
+    // 60% chance to spawn the world's primary sin enemy
+    if (roll < 0.6) {
+      return this.createSinEnemy(worldConfig.primaryEnemy, x, y);
+    }
+
+    // 25% chance to spawn from the world's enemy pool
+    if (roll < 0.85) {
+      const poolIndex = Math.floor(Math.random() * worldConfig.enemyTypes.length);
+      return this.createSinEnemy(worldConfig.enemyTypes[poolIndex], x, y);
+    }
+
+    // 15% chance for standard enemies
+    const standardRoll = Math.random();
+    if (standardRoll < 0.33) {
+      return new TankEnemy(this.scene, x, y, this.floor);
+    } else if (standardRoll < 0.66) {
+      const ranged = new RangedEnemy(this.scene, x, y, this.floor);
+      ranged.setProjectileGroup(this.enemyProjectiles);
+      return ranged;
+    } else {
+      return new FastEnemy(this.scene, x, y, this.floor);
+    }
+  }
+
+  private createSinEnemy(enemyType: string, x: number, y: number): Enemy {
+    switch (enemyType) {
+      case 'PrideEnemy':
+        return new PrideEnemy(this.scene, x, y, this.floor);
+      case 'GreedEnemy':
+        return new GreedEnemy(this.scene, x, y, this.floor);
+      case 'WrathEnemy':
+        return new WrathEnemy(this.scene, x, y, this.floor);
+      case 'SlothEnemy':
+        return new SlothEnemy(this.scene, x, y, this.floor);
+      case 'EnvyEnemy':
+        return new EnvyEnemy(this.scene, x, y, this.floor);
+      case 'GluttonyEnemy':
+        return new GluttonyEnemy(this.scene, x, y, this.floor);
+      case 'LustEnemy':
+        return new LustEnemy(this.scene, x, y, this.floor);
+      case 'TankEnemy':
+        return new TankEnemy(this.scene, x, y, this.floor);
+      case 'RangedEnemy':
+        const ranged = new RangedEnemy(this.scene, x, y, this.floor);
+        ranged.setProjectileGroup(this.enemyProjectiles);
+        return ranged;
+      case 'FastEnemy':
+        return new FastEnemy(this.scene, x, y, this.floor);
+      case 'BasicEnemy':
+      default:
+        return new Enemy(this.scene, x, y, 'enemy', {
+          hp: 20 + this.floor * 5,
+          attack: 5 + this.floor * 2,
+          defense: 1 + Math.floor(this.floor / 2),
+          speed: 60 + this.floor * 5,
+          xpValue: 20 + this.floor * 5,
+        });
+    }
+  }
+
+  private createLegacyEnemy(x: number, y: number): Enemy {
     const roll = Math.random();
     const sinRoll = Math.random();
 

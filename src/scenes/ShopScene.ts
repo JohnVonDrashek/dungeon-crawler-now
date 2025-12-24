@@ -4,9 +4,12 @@ import { Player } from '../entities/Player';
 import { ShopUI } from '../ui/ShopUI';
 import { InventoryUI } from '../ui/InventoryUI';
 import { AudioSystem } from '../systems/AudioSystem';
+import { SinWorld } from '../config/WorldConfig';
+import { progressionManager } from '../systems/ProgressionSystem';
 
 interface ShopData {
   floor: number;
+  currentWorld?: SinWorld | null;
   playerStats: ReturnType<Player['getSaveData']>;
   inventorySerialized: string;
 }
@@ -14,6 +17,7 @@ interface ShopData {
 export class ShopScene extends Phaser.Scene {
   private player!: Player;
   private floor: number = 1;
+  private currentWorld: SinWorld | null = null;
   private shopUI!: ShopUI;
   private inventoryUI!: InventoryUI;
   private audioSystem!: AudioSystem;
@@ -50,8 +54,10 @@ export class ShopScene extends Phaser.Scene {
     const shopData = this.registry.get('shopData') as ShopData | undefined;
     if (shopData) {
       this.floor = shopData.floor;
+      this.currentWorld = shopData.currentWorld || null;
     } else {
       this.floor = this.registry.get('floor') || 1;
+      this.currentWorld = this.registry.get('currentWorld') || null;
     }
 
     this.audioSystem = new AudioSystem(this);
@@ -624,9 +630,17 @@ export class ShopScene extends Phaser.Scene {
     const nextFloor = this.floor + 1;
     this.registry.set('floor', nextFloor);
 
+    // Pass current world to next floor
+    if (this.currentWorld) {
+      this.registry.set('currentWorld', this.currentWorld);
+      // Update progression system
+      progressionManager.advanceFloor();
+    }
+
     // Save player state for GameScene
     this.registry.set('shopData', {
       floor: nextFloor,
+      currentWorld: this.currentWorld,
       playerStats: this.player.getSaveData(),
       inventorySerialized: this.player.inventory.serialize(),
     });

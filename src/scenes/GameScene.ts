@@ -20,6 +20,8 @@ import { LoreSystem, LoreEntry } from '../systems/LoreSystem';
 import { LootDropManager } from '../systems/LootDropManager';
 import { PlayerAttackManager } from '../systems/PlayerAttackManager';
 import { EnemySpawnManager } from '../systems/EnemySpawnManager';
+import { progressionManager } from '../systems/ProgressionSystem';
+import { SinWorld, getWorldConfig } from '../config/WorldConfig';
 
 export class GameScene extends Phaser.Scene {
   private player!: Player;
@@ -50,6 +52,7 @@ export class GameScene extends Phaser.Scene {
   private activeLoreModal: Phaser.GameObjects.Container | null = null;
   private lorePrompt!: Phaser.GameObjects.Text;
   private floor: number = 1;
+  private currentWorld: SinWorld | null = null;
   private canExit: boolean = true;
   private isBossFloor: boolean = false;
   private isFinalBoss: boolean = false;
@@ -63,9 +66,18 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     this.floor = this.registry.get('floor') || 1;
+    this.currentWorld = this.registry.get('currentWorld') || null;
     this.canExit = true;
-    this.isBossFloor = this.floor % 5 === 0;
-    this.isFinalBoss = this.floor === this.FINAL_FLOOR;
+
+    // In world mode, floor 3 is the boss floor
+    // In legacy mode (no world), every 5th floor is boss
+    if (this.currentWorld) {
+      this.isBossFloor = this.floor === 3;
+      this.isFinalBoss = false; // Final boss is per-world now
+    } else {
+      this.isBossFloor = this.floor % 5 === 0;
+      this.isFinalBoss = this.floor === this.FINAL_FLOOR;
+    }
 
     // Persist stats across floor transitions
     this.enemiesKilled = this.registry.get('enemiesKilled') || 0;
@@ -141,7 +153,7 @@ export class GameScene extends Phaser.Scene {
 
     // Create enemy spawn manager (needs roomManager)
     this.enemySpawnManager = new EnemySpawnManager(
-      this, this.player, this.roomManager, this.audioSystem, this.enemyProjectiles, this.floor
+      this, this.player, this.roomManager, this.audioSystem, this.enemyProjectiles, this.floor, this.currentWorld
     );
     this.enemySpawnManager.create();
 
@@ -212,13 +224,16 @@ export class GameScene extends Phaser.Scene {
     this.floorLayer = this.add.group();
     this.wallLayer = this.physics.add.staticGroup();
 
+    // Determine wall texture based on current world
+    const wallTexture = this.currentWorld ? `wall_${this.currentWorld}` : 'wall';
+
     for (let y = 0; y < DUNGEON_HEIGHT; y++) {
       for (let x = 0; x < DUNGEON_WIDTH; x++) {
         const tileX = x * TILE_SIZE;
         const tileY = y * TILE_SIZE;
 
         if (this.dungeon.tiles[y][x] === 1) {
-          const wall = this.wallLayer.create(tileX, tileY, 'wall') as Phaser.Physics.Arcade.Sprite;
+          const wall = this.wallLayer.create(tileX, tileY, wallTexture) as Phaser.Physics.Arcade.Sprite;
           wall.setOrigin(0, 0);
           wall.setImmovable(true);
           wall.refreshBody();
@@ -245,7 +260,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private getFloorTextureForRoom(room: Room | null): string {
-    if (!room) return 'floor'; // Corridors use normal floor
+    // Default floor texture based on current world
+    const defaultFloor = this.currentWorld ? `floor_${this.currentWorld}` : 'floor';
+
+    if (!room) return defaultFloor; // Corridors use world floor
 
     switch (room.type) {
       case RoomType.TREASURE:
@@ -257,7 +275,7 @@ export class GameScene extends Phaser.Scene {
       case RoomType.CHALLENGE:
         return 'floor_challenge';
       default:
-        return 'floor';
+        return defaultFloor;
     }
   }
 
@@ -1020,30 +1038,112 @@ export class GameScene extends Phaser.Scene {
   private handleExitCollision(): void {
     if (!this.canExit) return;
 
-    // Block exit on final floor until boss is overcome
-    if (this.isFinalBoss && this.hasBossAlive()) {
-      this.showGameMessage('Overcome the final trial first!');
+    // Block exit on boss floor until boss is defeated
+    if (this.isBossFloor && this.hasBossAlive()) {
+      this.showGameMessage('Defeat the boss first!');
       return;
     }
 
     this.canExit = false;
 
-    // If final boss is dead, trigger victory instead of next floor
+    // World mode: different flow
+    if (this.currentWorld) {
+      this.handleWorldExit();
+      return;
+    }
+
+    // Legacy mode: original flow
     if (this.isFinalBoss) {
       this.handleVictory();
       return;
     }
 
     this.audioSystem.play('sfx_stairs', 0.5);
-
-    // Show shop before transitioning to next floor
     this.showShop();
+  }
+
+  private handleWorldExit(): void {
+    this.audioSystem.play('sfx_stairs', 0.5);
+
+    // Floor 3 (boss floor) - complete world and return to hub
+    if (this.floor === 3) {
+      this.completeWorldAndReturnToHub();
+      return;
+    }
+
+    // Floor 1-2 - go to shop, then next floor
+    this.showShop();
+  }
+
+  private completeWorldAndReturnToHub(): void {
+    // Mark the world as complete
+    progressionManager.completeWorld(this.currentWorld!);
+
+    // Save progress
+    this.saveGame();
+
+    // Show completion message
+    const worldConfig = getWorldConfig(this.currentWorld!);
+    this.showWorldCompleteMessage(worldConfig.name);
+
+    // Transition to hub after delay
+    this.time.delayedCall(2500, () => {
+      this.cameras.main.fade(500, 0, 0, 0, false, (_camera: Phaser.Cameras.Scene2D.Camera, progress: number) => {
+        if (progress === 1) {
+          this.registry.remove('currentWorld');
+          this.scene.start('HubScene');
+        }
+      });
+    });
+  }
+
+  private showWorldCompleteMessage(worldName: string): void {
+    const completedCount = progressionManager.getCompletedWorldCount();
+    const isAllComplete = progressionManager.areAllWorldsCompleted();
+
+    const titleText = isAllComplete ? 'ALL WORLDS COMPLETE!' : `${worldName} Complete!`;
+    const subText = isAllComplete ? 'Return to the Hub for your reward!' : `${completedCount}/7 Worlds Conquered`;
+
+    const title = this.add.text(
+      this.cameras.main.width / 2,
+      this.cameras.main.height / 2 - 30,
+      titleText,
+      {
+        fontSize: '32px',
+        color: isAllComplete ? '#ffd700' : '#22c55e',
+        fontStyle: 'bold',
+        stroke: '#000000',
+        strokeThickness: 4,
+      }
+    );
+    title.setOrigin(0.5);
+    title.setScrollFactor(0);
+    title.setDepth(200);
+
+    const subtitle = this.add.text(
+      this.cameras.main.width / 2,
+      this.cameras.main.height / 2 + 20,
+      subText,
+      {
+        fontSize: '18px',
+        color: '#ffffff',
+        stroke: '#000000',
+        strokeThickness: 2,
+      }
+    );
+    subtitle.setOrigin(0.5);
+    subtitle.setScrollFactor(0);
+    subtitle.setDepth(200);
+
+    // Celebration effect
+    this.cameras.main.flash(500, 50, 200, 50);
   }
 
   private showShop(): void {
     // Save player state to registry for ShopScene
     this.registry.set('shopData', {
       floor: this.floor,
+      currentWorld: this.currentWorld,
       playerStats: this.player.getSaveData(),
       inventorySerialized: this.player.inventory.serialize(),
     });
@@ -1061,34 +1161,104 @@ export class GameScene extends Phaser.Scene {
   }
 
   private showBossAnnouncement(): void {
-    const isFinal = this.floor === this.FINAL_FLOOR;
-    const message = isFinal ? 'FLOOR 20\nFINAL BOSS' : `FLOOR ${this.floor}\nBOSS BATTLE`;
-    const color = isFinal ? '#fbbf24' : '#ff4444';
+    let message: string;
+    let color: string;
+    let fontSize: string;
+    let showSubtitle = false;
+    let subtitle = '';
 
-    const text = this.add.text(
-      this.cameras.main.width / 2,
-      this.cameras.main.height / 2,
-      message,
-      {
-        fontSize: isFinal ? '40px' : '32px',
-        color: color,
-        fontStyle: 'bold',
-        align: 'center',
-        stroke: '#000000',
-        strokeThickness: isFinal ? 4 : 0,
-      }
-    );
+    if (this.currentWorld) {
+      // World mode - show sin boss announcement
+      const worldConfig = getWorldConfig(this.currentWorld);
+      message = `⚔ ${worldConfig.name.toUpperCase()} ⚔`;
+      subtitle = 'THE SIN AWAITS';
+      color = `#${worldConfig.colors.primary.toString(16).padStart(6, '0')}`;
+      fontSize = '36px';
+      showSubtitle = true;
+    } else {
+      // Legacy mode
+      const isFinal = this.floor === this.FINAL_FLOOR;
+      message = isFinal ? 'FLOOR 20\nFINAL BOSS' : `FLOOR ${this.floor}\nBOSS BATTLE`;
+      color = isFinal ? '#fbbf24' : '#ff4444';
+      fontSize = isFinal ? '40px' : '32px';
+    }
+
+    const centerX = this.cameras.main.width / 2;
+    const centerY = this.cameras.main.height / 2;
+
+    // Screen flash for dramatic effect in world mode
+    if (this.currentWorld) {
+      const worldConfig = getWorldConfig(this.currentWorld);
+      const flashColor = worldConfig.colors.primary;
+      const r = (flashColor >> 16) & 0xff;
+      const g = (flashColor >> 8) & 0xff;
+      const b = flashColor & 0xff;
+      this.cameras.main.flash(300, r, g, b, false);
+    }
+
+    const text = this.add.text(centerX, centerY, message, {
+      fontSize: fontSize,
+      color: color,
+      fontStyle: 'bold',
+      align: 'center',
+      stroke: '#000000',
+      strokeThickness: 4,
+    });
     text.setOrigin(0.5);
     text.setScrollFactor(0);
     text.setDepth(200);
 
+    // Scale in animation
+    text.setScale(0.5);
+    this.tweens.add({
+      targets: text,
+      scale: 1,
+      duration: 400,
+      ease: 'Back.easeOut',
+    });
+
+    // Subtitle for world mode
+    let subtitleText: Phaser.GameObjects.Text | null = null;
+    if (showSubtitle) {
+      subtitleText = this.add.text(centerX, centerY + 45, subtitle, {
+        fontSize: '18px',
+        color: '#9ca3af',
+        fontStyle: 'italic',
+        align: 'center',
+        stroke: '#000000',
+        strokeThickness: 2,
+      });
+      subtitleText.setOrigin(0.5);
+      subtitleText.setScrollFactor(0);
+      subtitleText.setDepth(200);
+      subtitleText.setAlpha(0);
+
+      this.tweens.add({
+        targets: subtitleText,
+        alpha: 1,
+        duration: 500,
+        delay: 300,
+      });
+    }
+
+    // Fade out
     this.tweens.add({
       targets: text,
       alpha: 0,
-      duration: 2000,
-      delay: 1000,
+      duration: 1500,
+      delay: 1500,
       onComplete: () => text.destroy(),
     });
+
+    if (subtitleText) {
+      this.tweens.add({
+        targets: subtitleText,
+        alpha: 0,
+        duration: 1500,
+        delay: 1500,
+        onComplete: () => subtitleText?.destroy(),
+      });
+    }
   }
 
   private setupEventHandlers(): void {
@@ -1302,64 +1472,266 @@ export class GameScene extends Phaser.Scene {
   }
 
   private devMode: boolean = false;
+  private debugMenu: Phaser.GameObjects.Container | null = null;
+  private debugMenuVisible: boolean = false;
 
   private setupDevControls(): void {
     if (!this.input.keyboard) return;
 
-    // F1: Toggle god mode (invincibility)
+    // F1: Toggle debug menu
     this.input.keyboard.on('keydown-F1', () => {
-      this.devMode = !this.devMode;
-      this.showDevMessage(`God Mode: ${this.devMode ? 'ON' : 'OFF'}`);
-      if (this.devMode) {
-        this.player.hp = this.player.maxHp;
-      }
+      this.toggleDebugMenu();
     });
+  }
 
-    // F2: Skip to next floor
-    this.input.keyboard.on('keydown-F2', () => {
-      this.showDevMessage(`Skipping to floor ${this.floor + 1}`);
-      this.handleExitCollision();
-    });
+  private getDebugOptions(): { label: string; action: () => void }[] {
+    return [
+      {
+        label: `[1] God Mode: ${this.devMode ? 'ON' : 'OFF'}`,
+        action: () => {
+          this.devMode = !this.devMode;
+          if (this.devMode) this.player.hp = this.player.maxHp;
+          this.showDevMessage(`God Mode: ${this.devMode ? 'ON' : 'OFF'}`);
+          this.refreshDebugMenu();
+        },
+      },
+      {
+        label: '[2] Full Heal',
+        action: () => {
+          this.player.hp = this.player.maxHp;
+          this.showDevMessage('Fully healed!');
+        },
+      },
+      {
+        label: '[3] Level Up x1',
+        action: () => {
+          this.player.gainXP(this.player.xpToNextLevel);
+          this.showDevMessage('Level Up!');
+        },
+      },
+      {
+        label: '[4] Level Up x5',
+        action: () => {
+          for (let i = 0; i < 5; i++) this.player.gainXP(this.player.xpToNextLevel);
+          this.showDevMessage('Level Up x5!');
+        },
+      },
+      {
+        label: '[5] Add 500 Gold',
+        action: () => {
+          this.player.gold += 500;
+          this.showDevMessage('+500 Gold');
+        },
+      },
+      {
+        label: '[6] Spawn Epic Loot',
+        action: () => {
+          const loot = this.lootSystem.generateGuaranteedLoot(ItemRarity.EPIC);
+          this.lootDropManager.spawnItemDrop(this.player.x + 30, this.player.y, loot);
+          this.showDevMessage('Spawned Epic Loot');
+        },
+      },
+      {
+        label: '[7] Spawn Rare Loot',
+        action: () => {
+          const loot = this.lootSystem.generateGuaranteedLoot(ItemRarity.RARE);
+          this.lootDropManager.spawnItemDrop(this.player.x + 30, this.player.y, loot);
+          this.showDevMessage('Spawned Rare Loot');
+        },
+      },
+      {
+        label: '[8] Kill All Enemies',
+        action: () => {
+          let count = 0;
+          this.enemies.getChildren().forEach((child) => {
+            const enemy = child as unknown as Enemy;
+            if (enemy.active) {
+              enemy.takeDamage(9999);
+              count++;
+            }
+          });
+          this.showDevMessage(`Killed ${count} enemies`);
+        },
+      },
+      {
+        label: '[9] Skip to Next Floor',
+        action: () => {
+          this.showDevMessage(`Skipping to floor ${this.floor + 1}`);
+          this.closeDebugMenu();
+          this.handleExitCollision();
+        },
+      },
+      {
+        label: '[0] Jump to Boss Floor',
+        action: () => {
+          if (this.currentWorld) {
+            this.floor = 2;
+            this.registry.set('floor', 2);
+            const worldConfig = getWorldConfig(this.currentWorld);
+            this.showDevMessage(`Jumping to ${worldConfig.name} BOSS`);
+          } else {
+            this.floor = this.FINAL_FLOOR - 1;
+            this.registry.set('floor', this.floor);
+            this.showDevMessage('Jumping to FINAL BOSS');
+          }
+          this.closeDebugMenu();
+          this.handleExitCollision();
+        },
+      },
+      {
+        label: '[C] Complete Current World',
+        action: () => {
+          if (this.currentWorld) {
+            progressionManager.completeWorld(this.currentWorld);
+            this.showDevMessage(`Completed ${getWorldConfig(this.currentWorld).name}`);
+          } else {
+            this.showDevMessage('Not in world mode');
+          }
+        },
+      },
+      {
+        label: '[A] Complete All Worlds',
+        action: () => {
+          const allWorlds = [
+            SinWorld.PRIDE, SinWorld.GREED, SinWorld.WRATH,
+            SinWorld.SLOTH, SinWorld.ENVY, SinWorld.GLUTTONY, SinWorld.LUST
+          ];
+          allWorlds.forEach(w => progressionManager.completeWorld(w));
+          this.showDevMessage('All 7 worlds completed!');
+        },
+      },
+      {
+        label: '[H] Return to Hub',
+        action: () => {
+          this.closeDebugMenu();
+          this.registry.remove('currentWorld');
+          this.scene.start('HubScene');
+        },
+      },
+    ];
+  }
 
-    // F3: Jump to final boss (floor 20)
-    this.input.keyboard.on('keydown-F3', () => {
-      this.floor = this.FINAL_FLOOR - 1;
-      this.registry.set('floor', this.floor);
-      this.showDevMessage('Jumping to FINAL BOSS');
-      this.handleExitCollision();
-    });
+  private toggleDebugMenu(): void {
+    if (this.debugMenuVisible) {
+      this.closeDebugMenu();
+    } else {
+      this.openDebugMenu();
+    }
+  }
 
-    // F4: Level up
-    this.input.keyboard.on('keydown-F4', () => {
-      this.player.gainXP(this.player.xpToNextLevel);
-      this.showDevMessage('Level Up!');
-    });
+  private openDebugMenu(): void {
+    if (this.debugMenu) this.debugMenu.destroy();
 
-    // F5: Spawn epic loot
-    this.input.keyboard.on('keydown-F5', () => {
-      const loot = this.lootSystem.generateGuaranteedLoot(ItemRarity.EPIC);
-      this.lootDropManager.spawnItemDrop(this.player.x + 30, this.player.y, loot);
-      this.showDevMessage('Spawned Epic Loot');
-    });
+    this.debugMenuVisible = true;
+    this.debugMenu = this.add.container(0, 0);
+    this.debugMenu.setScrollFactor(0);
+    this.debugMenu.setDepth(500);
 
-    // F6: Kill all enemies
-    this.input.keyboard.on('keydown-F6', () => {
-      let count = 0;
-      this.enemies.getChildren().forEach((child) => {
-        const enemy = child as unknown as Enemy;
-        if (enemy.active) {
-          enemy.takeDamage(9999);
-          count++;
-        }
+    // Background
+    const bg = this.add.rectangle(
+      this.cameras.main.width / 2,
+      this.cameras.main.height / 2,
+      320, 400, 0x000000, 0.9
+    );
+    bg.setStrokeStyle(2, 0xfbbf24);
+    this.debugMenu.add(bg);
+
+    // Title
+    const title = this.add.text(
+      this.cameras.main.width / 2,
+      this.cameras.main.height / 2 - 175,
+      '== DEBUG MENU ==',
+      { fontSize: '18px', fontFamily: 'monospace', color: '#fbbf24' }
+    );
+    title.setOrigin(0.5);
+    this.debugMenu.add(title);
+
+    // Hint
+    const hint = this.add.text(
+      this.cameras.main.width / 2,
+      this.cameras.main.height / 2 + 185,
+      'Press key or click | F1/ESC to close',
+      { fontSize: '10px', fontFamily: 'monospace', color: '#6b7280' }
+    );
+    hint.setOrigin(0.5);
+    this.debugMenu.add(hint);
+
+    // Options
+    const options = this.getDebugOptions();
+    const startY = this.cameras.main.height / 2 - 140;
+
+    options.forEach((opt, i) => {
+      const y = startY + i * 24;
+      const text = this.add.text(
+        this.cameras.main.width / 2 - 140,
+        y,
+        opt.label,
+        { fontSize: '13px', fontFamily: 'monospace', color: '#e5e7eb' }
+      );
+      text.setInteractive({ useHandCursor: true });
+      text.on('pointerover', () => text.setColor('#fbbf24'));
+      text.on('pointerout', () => text.setColor('#e5e7eb'));
+      text.on('pointerdown', () => {
+        opt.action();
       });
-      this.showDevMessage(`Killed ${count} enemies`);
+      this.debugMenu!.add(text);
     });
+
+    // Setup keyboard shortcuts for debug menu
+    this.setupDebugMenuKeys();
+  }
+
+  private setupDebugMenuKeys(): void {
+    if (!this.input.keyboard) return;
+
+    const keyHandler = (event: KeyboardEvent) => {
+      if (!this.debugMenuVisible) return;
+
+      const options = this.getDebugOptions();
+      const key = event.key.toUpperCase();
+
+      // Number keys 1-9, 0
+      if (key >= '1' && key <= '9') {
+        const idx = parseInt(key) - 1;
+        if (idx < options.length) options[idx].action();
+      } else if (key === '0') {
+        if (options.length > 9) options[9].action();
+      } else if (key === 'C') {
+        options.find(o => o.label.includes('[C]'))?.action();
+      } else if (key === 'A') {
+        options.find(o => o.label.includes('[A]'))?.action();
+      } else if (key === 'H') {
+        options.find(o => o.label.includes('[H]'))?.action();
+      } else if (key === 'ESCAPE') {
+        this.closeDebugMenu();
+      }
+    };
+
+    this.input.keyboard.on('keydown', keyHandler);
+    this.debugMenu?.once('destroy', () => {
+      this.input.keyboard?.off('keydown', keyHandler);
+    });
+  }
+
+  private refreshDebugMenu(): void {
+    if (this.debugMenuVisible) {
+      this.openDebugMenu();
+    }
+  }
+
+  private closeDebugMenu(): void {
+    this.debugMenuVisible = false;
+    if (this.debugMenu) {
+      this.debugMenu.destroy();
+      this.debugMenu = null;
+    }
   }
 
   private hasBossAlive(): boolean {
     return this.enemies.getChildren().some((child) => {
       const enemy = child as unknown as Enemy;
-      return enemy.active && enemy instanceof BossEnemy;
+      // Check for BossEnemy or sin bosses (all bosses have scale >= 2)
+      return enemy.active && (enemy instanceof BossEnemy || enemy.scale >= 2);
     });
   }
 
@@ -1589,7 +1961,16 @@ export class GameScene extends Phaser.Scene {
   private updateHUD(): void {
     const enemyCount = this.enemies.getChildren().filter((e) => e.active).length;
     const itemCount = this.player.inventory.getItemCount();
-    const floorText = this.isBossFloor ? `Stage: ${this.floor} (BOSS)` : `Stage: ${this.floor}`;
+
+    // Display world name + floor, or just stage for legacy mode
+    let floorText: string;
+    if (this.currentWorld) {
+      const worldConfig = getWorldConfig(this.currentWorld);
+      const bossLabel = this.isBossFloor ? ' (BOSS)' : '';
+      floorText = `${worldConfig.name} - Floor ${this.floor}${bossLabel}`;
+    } else {
+      floorText = this.isBossFloor ? `Stage: ${this.floor} (BOSS)` : `Stage: ${this.floor}`;
+    }
 
     const lines = [
       floorText,
@@ -1620,15 +2001,26 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handlePlayerDeath(): void {
-    // Delete save on death (roguelike mechanic)
-    SaveSystem.deleteSave();
-
     const stats = {
       floor: this.floor,
       level: this.player.level,
       enemiesKilled: this.enemiesKilled,
       itemsCollected: this.itemsCollected,
+      currentWorld: this.currentWorld,
     };
+
+    if (this.currentWorld) {
+      // World mode: record death but keep progression
+      progressionManager.handleDeath();
+      // Save progression (active run is now cleared)
+      this.saveGame();
+
+      // Clear world from registry
+      this.registry.remove('currentWorld');
+    } else {
+      // Legacy mode: delete save on death (roguelike mechanic)
+      SaveSystem.deleteSave();
+    }
 
     // Clear stats from registry
     this.registry.set('floor', 1);
@@ -1662,7 +2054,7 @@ export class GameScene extends Phaser.Scene {
 
   private saveGame(): void {
     SaveSystem.save(
-      this.floor,
+      progressionManager.getProgression(),
       this.player.getSaveData(),
       this.player.inventory
     );
@@ -1672,15 +2064,19 @@ export class GameScene extends Phaser.Scene {
     const savedData = SaveSystem.load();
     if (!savedData) return;
 
-    // Only auto-load if this is the first floor of a new session
-    // (the registry would be empty on first load)
-    if (!this.registry.has('floor') || this.registry.get('floor') === savedData.floor) {
-      this.floor = savedData.floor;
-      this.registry.set('floor', this.floor);
-      this.isBossFloor = this.floor % 5 === 0;
+    // Restore progression state
+    progressionManager.setProgression(savedData.progression);
 
-      this.player.restoreFromSave(savedData.player);
-      SaveSystem.restoreInventory(this.player.inventory, savedData.inventory);
+    // Restore player data if we have an active run
+    const activeRun = savedData.progression.activeRun;
+    if (activeRun) {
+      this.floor = activeRun.floor;
+      this.registry.set('floor', this.floor);
+      // Boss floor is floor 3 of each world (last floor)
+      this.isBossFloor = this.floor === 3;
     }
+
+    this.player.restoreFromSave(savedData.player);
+    SaveSystem.restoreInventory(this.player.inventory, savedData.inventory);
   }
 }
