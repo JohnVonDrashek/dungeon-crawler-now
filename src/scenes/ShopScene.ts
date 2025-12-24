@@ -56,6 +56,9 @@ export class ShopScene extends Phaser.Scene {
 
     this.audioSystem = new AudioSystem(this);
 
+    // Start peaceful shrine music
+    this.audioSystem.startMusic('shrine');
+
     // Create the room
     this.createRoom();
 

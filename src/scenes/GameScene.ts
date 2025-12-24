@@ -64,6 +64,9 @@ export class GameScene extends Phaser.Scene {
     this.lootSystem = new LootSystem(0.5);
     this.audioSystem = new AudioSystem(this);
 
+    // Start exploration music
+    this.audioSystem.startMusic('exploration');
+
     this.dungeonGenerator = new DungeonGenerator(DUNGEON_WIDTH, DUNGEON_HEIGHT);
     this.dungeon = this.dungeonGenerator.generate();
 
@@ -550,6 +553,7 @@ export class GameScene extends Phaser.Scene {
     // Activate the room immediately (closes doors)
     this.roomManager.activateRoom(room.id, enemyCount);
     this.audioSystem.play('sfx_hit', 0.3); // Door slam sound
+    this.audioSystem.setMusicStyle('combat'); // Switch to combat music
     this.shakeCamera(isBossRoom ? 8 : 3, isBossRoom ? 300 : 150);
 
     // Show spawn indicators
@@ -1272,6 +1276,11 @@ export class GameScene extends Phaser.Scene {
         e.active && e !== (enemy as unknown as Phaser.GameObjects.GameObject)
       ).length;
       this.roomManager.onEnemyKilled(remainingEnemies);
+
+      // Switch back to exploration music when room is cleared
+      if (remainingEnemies === 0) {
+        this.audioSystem.setMusicStyle('exploration');
+      }
 
       // Boss drops guaranteed rare+ loot and a weapon
       if (enemy instanceof BossEnemy) {

@@ -1,8 +1,32 @@
 import Phaser from 'phaser';
 
+export type MusicStyle = 'exploration' | 'shrine' | 'combat';
+
+// Dorian mode frequencies starting from A (220 Hz)
+const DORIAN_SCALE = [
+  220,    // A (root)
+  247.5,  // B (major 2nd)
+  264,    // C (minor 3rd)
+  293.3,  // D (perfect 4th)
+  330,    // E (perfect 5th)
+  367.5,  // F# (major 6th)
+  396,    // G (minor 7th)
+  440,    // A (octave)
+];
+
 export class AudioSystem {
   private audioContext: AudioContext | null = null;
   private soundBuffers: Map<string, AudioBuffer> = new Map();
+
+  // Music system
+  private droneOscillator: OscillatorNode | null = null;
+  private droneGain: GainNode | null = null;
+  private melodyOscillator: OscillatorNode | null = null;
+  private melodyGain: GainNode | null = null;
+  private isPlayingMusic: boolean = false;
+  private melodyTimeoutId: number | null = null;
+  private currentStyle: MusicStyle = 'exploration';
+  private currentNoteIndex: number = 0;
 
   constructor(_scene: Phaser.Scene) {
     this.initAudio();
@@ -126,5 +150,229 @@ export class AudioSystem {
   // Keep the static method for backwards compatibility but make it a no-op
   static generateSounds(_scene: Phaser.Scene): void {
     // Sounds are now generated in the instance constructor
+  }
+
+  // ==================== MUSIC SYSTEM ====================
+
+  startMusic(style: MusicStyle = 'exploration'): void {
+    if (!this.audioContext) return;
+
+    // Resume audio context if suspended
+    if (this.audioContext.state === 'suspended') {
+      this.audioContext.resume();
+    }
+
+    // If already playing same style, do nothing
+    if (this.isPlayingMusic && this.currentStyle === style) return;
+
+    // If playing different style, crossfade
+    if (this.isPlayingMusic) {
+      this.crossfadeToStyle(style);
+      return;
+    }
+
+    this.currentStyle = style;
+    this.isPlayingMusic = true;
+    this.currentNoteIndex = 0; // Start on root
+
+    // Start the drone
+    this.createDrone();
+
+    // Start the melody
+    this.scheduleNextNote();
+  }
+
+  stopMusic(): void {
+    if (!this.audioContext || !this.isPlayingMusic) return;
+
+    this.isPlayingMusic = false;
+
+    // Clear melody timeout
+    if (this.melodyTimeoutId !== null) {
+      clearTimeout(this.melodyTimeoutId);
+      this.melodyTimeoutId = null;
+    }
+
+    // Fade out drone
+    if (this.droneGain && this.droneOscillator) {
+      const now = this.audioContext.currentTime;
+      this.droneGain.gain.setValueAtTime(this.droneGain.gain.value, now);
+      this.droneGain.gain.linearRampToValueAtTime(0, now + 1);
+      this.droneOscillator.stop(now + 1.1);
+      this.droneOscillator = null;
+      this.droneGain = null;
+    }
+
+    // Fade out melody
+    if (this.melodyGain && this.melodyOscillator) {
+      const now = this.audioContext.currentTime;
+      this.melodyGain.gain.setValueAtTime(this.melodyGain.gain.value, now);
+      this.melodyGain.gain.linearRampToValueAtTime(0, now + 0.5);
+      this.melodyOscillator.stop(now + 0.6);
+      this.melodyOscillator = null;
+      this.melodyGain = null;
+    }
+  }
+
+  private crossfadeToStyle(newStyle: MusicStyle): void {
+    // Simple implementation: adjust parameters without restarting
+    this.currentStyle = newStyle;
+    // The next scheduled note will pick up the new style parameters
+  }
+
+  private createDrone(): void {
+    if (!this.audioContext) return;
+
+    // Create drone oscillator (low A at 110 Hz)
+    this.droneOscillator = this.audioContext.createOscillator();
+    this.droneGain = this.audioContext.createGain();
+
+    this.droneOscillator.type = 'sine';
+    this.droneOscillator.frequency.value = 110; // Low A
+
+    // Set initial volume based on style
+    const droneVolume = this.currentStyle === 'shrine' ? 0.06 : 0.08;
+    this.droneGain.gain.value = 0;
+
+    this.droneOscillator.connect(this.droneGain);
+    this.droneGain.connect(this.audioContext.destination);
+
+    this.droneOscillator.start();
+
+    // Fade in drone
+    const now = this.audioContext.currentTime;
+    this.droneGain.gain.setValueAtTime(0, now);
+    this.droneGain.gain.linearRampToValueAtTime(droneVolume, now + 2);
+
+    // Add subtle volume wobble to drone
+    this.addDroneWobble();
+  }
+
+  private addDroneWobble(): void {
+    if (!this.audioContext || !this.droneGain) return;
+
+    // Create LFO for subtle volume modulation
+    const lfo = this.audioContext.createOscillator();
+    const lfoGain = this.audioContext.createGain();
+
+    lfo.type = 'sine';
+    lfo.frequency.value = 0.1; // Very slow wobble
+    lfoGain.gain.value = 0.02; // Subtle amount
+
+    lfo.connect(lfoGain);
+    lfoGain.connect(this.droneGain.gain);
+    lfo.start();
+  }
+
+  private scheduleNextNote(): void {
+    if (!this.isPlayingMusic || !this.audioContext) return;
+
+    // Play current note
+    this.playMelodyNote();
+
+    // Calculate delay until next note based on style
+    let minDelay: number, maxDelay: number;
+    switch (this.currentStyle) {
+      case 'combat':
+        minDelay = 1000;
+        maxDelay = 2000;
+        break;
+      case 'shrine':
+        minDelay = 3000;
+        maxDelay = 5000;
+        break;
+      case 'exploration':
+      default:
+        minDelay = 2000;
+        maxDelay = 4000;
+        break;
+    }
+
+    const delay = minDelay + Math.random() * (maxDelay - minDelay);
+
+    this.melodyTimeoutId = window.setTimeout(() => {
+      this.generateNextNote();
+      this.scheduleNextNote();
+    }, delay);
+  }
+
+  private generateNextNote(): void {
+    const rand = Math.random();
+
+    if (rand < 0.2) {
+      // 20% chance: stay on same note
+      return;
+    } else if (rand < 0.9) {
+      // 70% chance: step up or down
+      const direction = Math.random() < 0.5 ? -1 : 1;
+      this.currentNoteIndex = Math.max(0, Math.min(DORIAN_SCALE.length - 1, this.currentNoteIndex + direction));
+    } else {
+      // 10% chance: leap (up to a third)
+      const leap = Math.random() < 0.5 ? -2 : 2;
+      this.currentNoteIndex = Math.max(0, Math.min(DORIAN_SCALE.length - 1, this.currentNoteIndex + leap));
+    }
+
+    // In combat, occasionally add tension by moving to less stable notes
+    if (this.currentStyle === 'combat' && Math.random() < 0.3) {
+      // Favor the minor 3rd (index 2) or minor 7th (index 6) for tension
+      if (Math.random() < 0.5) {
+        this.currentNoteIndex = 2;
+      } else {
+        this.currentNoteIndex = 6;
+      }
+    }
+  }
+
+  private playMelodyNote(): void {
+    if (!this.audioContext) return;
+
+    const frequency = DORIAN_SCALE[this.currentNoteIndex];
+
+    // Create new oscillator for this note
+    const osc = this.audioContext.createOscillator();
+    const gain = this.audioContext.createGain();
+
+    osc.type = 'sine';
+    osc.frequency.value = frequency;
+
+    // Volume based on style
+    let noteVolume: number;
+    switch (this.currentStyle) {
+      case 'combat':
+        noteVolume = 0.15;
+        break;
+      case 'shrine':
+        noteVolume = 0.10;
+        break;
+      case 'exploration':
+      default:
+        noteVolume = 0.12;
+        break;
+    }
+
+    const now = this.audioContext.currentTime;
+
+    // Envelope: attack and release
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(noteVolume, now + 0.3); // Attack
+    gain.gain.setValueAtTime(noteVolume, now + 0.3);
+    gain.gain.linearRampToValueAtTime(noteVolume * 0.7, now + 1.5); // Sustain decay
+    gain.gain.linearRampToValueAtTime(0, now + 2.5); // Release
+
+    osc.connect(gain);
+    gain.connect(this.audioContext.destination);
+
+    osc.start(now);
+    osc.stop(now + 2.6);
+  }
+
+  setMusicStyle(style: MusicStyle): void {
+    if (this.isPlayingMusic) {
+      this.currentStyle = style;
+    }
+  }
+
+  isMusicPlaying(): boolean {
+    return this.isPlayingMusic;
   }
 }
