@@ -97,6 +97,45 @@ export class BootScene extends Phaser.Scene {
     wallGraphics.generateTexture('wall', TILE_SIZE, TILE_SIZE);
     wallGraphics.destroy();
 
+    // === WORLD-SPECIFIC FLOOR/WALL TEXTURES ===
+    // Generate themed textures for each sin world
+    for (const worldId of getAllWorlds()) {
+      const config = getWorldConfig(worldId);
+      const colors = config.colors;
+
+      // World-specific floor tile
+      const worldFloor = this.make.graphics({ x: 0, y: 0 });
+      worldFloor.fillStyle(colors.floor);
+      worldFloor.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+      // Add subtle grid lines using a lighter shade
+      worldFloor.lineStyle(1, this.lightenColor(colors.floor, 0.15));
+      worldFloor.strokeRect(0, 0, TILE_SIZE, TILE_SIZE);
+      // Add some texture detail - corner accents
+      worldFloor.fillStyle(this.lightenColor(colors.floor, 0.08));
+      worldFloor.fillRect(0, 0, 3, 3);
+      worldFloor.fillRect(TILE_SIZE - 3, TILE_SIZE - 3, 3, 3);
+      worldFloor.generateTexture(`floor_${worldId}`, TILE_SIZE, TILE_SIZE);
+      worldFloor.destroy();
+
+      // World-specific wall tile
+      const worldWall = this.make.graphics({ x: 0, y: 0 });
+      worldWall.fillStyle(colors.wall);
+      worldWall.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+      // Add brick-like pattern
+      worldWall.lineStyle(1, this.lightenColor(colors.wall, 0.12));
+      worldWall.strokeRect(0, 0, TILE_SIZE, TILE_SIZE);
+      // Horizontal mortar lines
+      worldWall.lineStyle(1, this.darkenColor(colors.wall, 0.15));
+      worldWall.lineBetween(0, TILE_SIZE / 3, TILE_SIZE, TILE_SIZE / 3);
+      worldWall.lineBetween(0, (TILE_SIZE * 2) / 3, TILE_SIZE, (TILE_SIZE * 2) / 3);
+      // Vertical mortar lines (offset for brick pattern)
+      worldWall.lineBetween(TILE_SIZE / 2, 0, TILE_SIZE / 2, TILE_SIZE / 3);
+      worldWall.lineBetween(0, TILE_SIZE / 3, 0, (TILE_SIZE * 2) / 3);
+      worldWall.lineBetween(TILE_SIZE / 2, (TILE_SIZE * 2) / 3, TILE_SIZE / 2, TILE_SIZE);
+      worldWall.generateTexture(`wall_${worldId}`, TILE_SIZE, TILE_SIZE);
+      worldWall.destroy();
+    }
+
     // Basic enemy sprite (slime creature)
     const enemyGraphics = this.make.graphics({ x: 0, y: 0 });
     // Slime body
