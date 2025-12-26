@@ -94,13 +94,13 @@ export class PrideBoss extends SinBoss {
   private attackPattern: number = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
-    super(scene, x, y, 'enemy_pride', floor, {
+    super(scene, x, y, 'pride_idle', floor, {
       hp: 400 + floor * 40,
       attack: 20 + floor * 4,
       defense: 8 + floor * 2,
       speed: 55,
     });
-    this.setTint(0xffd700);
+    this.setupSpriteAnimations('pride', true);
   }
 
   protected onPhaseChange(newPhase: number): void {
@@ -124,7 +124,7 @@ export class PrideBoss extends SinBoss {
       const mirror = this.scene.add.sprite(
         this.x + Math.cos(angle) * distance,
         this.y + Math.sin(angle) * distance,
-        'enemy_pride'
+        'pride_idle'
       );
       mirror.setScale(1.5);
       mirror.setAlpha(0.5);
@@ -222,13 +222,13 @@ export class GreedBoss extends SinBoss {
   private goldPiles: Phaser.GameObjects.Sprite[] = [];
 
   constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
-    super(scene, x, y, 'enemy_greed', floor, {
+    super(scene, x, y, 'greed_idle', floor, {
       hp: 350 + floor * 35,
       attack: 18 + floor * 3,
       defense: 4 + floor,
       speed: 75,
     });
-    this.setTint(0x22c55e);
+    this.setupSpriteAnimations('greed', false);
   }
 
   protected onPhaseChange(newPhase: number): void {
@@ -337,14 +337,14 @@ export class WrathBoss extends SinBoss {
   private readonly baseAttack: number;
 
   constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
-    super(scene, x, y, 'enemy_wrath', floor, {
+    super(scene, x, y, 'wrath_idle', floor, {
       hp: 450 + floor * 45,
       attack: 25 + floor * 5,
       defense: 3 + floor,
       speed: 70,
     });
+    this.setupSpriteAnimations('wrath', false);
     this.baseAttack = this.attack;
-    this.setTint(0xdc2626);
   }
 
   protected onPhaseChange(newPhase: number): void {
@@ -445,13 +445,13 @@ export class SlothBoss extends SinBoss {
   private attackPattern: number = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
-    super(scene, x, y, 'enemy_sloth', floor, {
+    super(scene, x, y, 'sloth_idle', floor, {
       hp: 500 + floor * 50,
       attack: 15 + floor * 3,
       defense: 10 + floor * 2,
       speed: 30,
     });
-    this.setTint(0x6b7280);
+    this.setupSpriteAnimations('sloth', false);
     this.createSlowAura();
   }
 
@@ -563,13 +563,13 @@ export class EnvyBoss extends SinBoss {
   private attackPattern: number = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
-    super(scene, x, y, 'enemy_envy', floor, {
+    super(scene, x, y, 'envy_idle', floor, {
       hp: 400 + floor * 40,
       attack: 16 + floor * 3,
       defense: 5 + floor,
       speed: 65,
     });
-    this.setTint(0x16a34a);
+    this.setupSpriteAnimations('envy', false);
   }
 
   protected onPhaseChange(newPhase: number): void {
@@ -586,7 +586,7 @@ export class EnvyBoss extends SinBoss {
   private spawnShadowClone(): void {
     const angle = Math.random() * Math.PI * 2;
     const dist = TILE_SIZE * 3;
-    const clone = new Enemy(this.scene, this.x + Math.cos(angle) * dist, this.y + Math.sin(angle) * dist, 'enemy_envy', {
+    const clone = new Enemy(this.scene, this.x + Math.cos(angle) * dist, this.y + Math.sin(angle) * dist, 'envy_idle', {
       hp: Math.floor(this.maxHp * 0.2),
       attack: Math.floor(this.attack * 0.5),
       defense: 0,
@@ -671,13 +671,13 @@ export class GluttonyBoss extends SinBoss {
   private attackPattern: number = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
-    super(scene, x, y, 'enemy_gluttony', floor, {
+    super(scene, x, y, 'gluttony_idle', floor, {
       hp: 550 + floor * 55,
       attack: 22 + floor * 4,
       defense: 6 + floor,
       speed: 45,
     });
-    this.setTint(0xfbbf24);
+    this.setupSpriteAnimations('gluttony', false);
   }
 
   protected onPhaseChange(newPhase: number): void {
@@ -770,13 +770,13 @@ export class LustBoss extends SinBoss {
   private attackPattern: number = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
-    super(scene, x, y, 'enemy_lust', floor, {
+    super(scene, x, y, 'lust_idle', floor, {
       hp: 380 + floor * 38,
       attack: 18 + floor * 3,
       defense: 4 + floor,
       speed: 70,
     });
-    this.setTint(0xec4899);
+    this.setupSpriteAnimations('lust', false);
     this.createPullAura();
   }
 

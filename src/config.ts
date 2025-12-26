@@ -10,12 +10,15 @@ import { VictoryScene } from './scenes/VictoryScene';
 import UIPlugin from 'phaser3-rex-plugins/templates/ui/ui-plugin.js';
 
 export const gameConfig: Phaser.Types.Core.GameConfig = {
-  type: Phaser.AUTO,
+  type: Phaser.WEBGL,
   width: GAME_WIDTH,
   height: GAME_HEIGHT,
   backgroundColor: '#1a1a2e',
   parent: 'game-container',
   pixelArt: true,
+  render: {
+    maxLights: 100, // Increased from default 10 for dungeon torch lighting
+  },
   physics: {
     default: 'arcade',
     arcade: {

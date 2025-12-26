@@ -45,29 +45,31 @@ export class LootDropManager {
     drop.setData('item', item);
     drop.setDepth(5);
     drop.setTint(RARITY_COLORS[item.rarity]);
+    drop.setPipeline('Light2D');
 
-    // Add glow effect behind the item
-    const glow = this.scene.add.sprite(x, y, 'weapon_drop_glow');
-    glow.setDepth(4);
-    glow.setTint(RARITY_COLORS[item.rarity]);
-    glow.setAlpha(0.4);
-    drop.setData('glow', glow);
+    // Add real point light for glow effect
+    const light = this.scene.lights.addLight(x, y, 80, RARITY_COLORS[item.rarity], 0.6);
+    drop.setData('light', light);
 
     // Floating animation
     this.scene.tweens.add({
-      targets: [drop, glow],
+      targets: drop,
       y: y - 5,
       duration: 500,
       yoyo: true,
       repeat: -1,
       ease: 'Sine.easeInOut',
+      onUpdate: () => {
+        // Keep light following the drop
+        light.setPosition(drop.x, drop.y);
+      },
     });
 
-    // Glow pulse
+    // Light pulse effect
     this.scene.tweens.add({
-      targets: glow,
-      alpha: 0.7,
-      scale: 1.3,
+      targets: light,
+      intensity: 0.9,
+      radius: 100,
       duration: 600,
       yoyo: true,
       repeat: -1,
@@ -76,12 +78,18 @@ export class LootDropManager {
 
     // Pop-in animation
     drop.setScale(0);
-    glow.setScale(0);
+    light.setIntensity(0);
     this.scene.tweens.add({
-      targets: [drop, glow],
+      targets: drop,
       scale: 1,
       duration: 200,
       ease: 'Back.easeOut',
+    });
+    this.scene.tweens.add({
+      targets: light,
+      intensity: 0.6,
+      duration: 200,
+      ease: 'Quad.easeOut',
     });
   }
 
@@ -89,33 +97,35 @@ export class LootDropManager {
     const drop = this.weaponDrops.create(x, y, weapon.stats.texture) as Phaser.Physics.Arcade.Sprite;
     drop.setData('weapon', weapon);
     drop.setDepth(5);
+    drop.setPipeline('Light2D');
 
-    // Rarity-based tint
+    // Rarity-based colors
     const rarityColors = [0xffffff, 0x00ff00, 0x0088ff, 0xaa00ff, 0xffaa00];
     drop.setTint(rarityColors[weapon.rarity]);
 
-    // Add glow effect
-    const glow = this.scene.add.sprite(x, y, 'weapon_drop_glow');
-    glow.setDepth(4);
-    glow.setTint(rarityColors[weapon.rarity]);
-    glow.setAlpha(0.5);
-    drop.setData('glow', glow);
+    // Add real point light for glow effect
+    const light = this.scene.lights.addLight(x, y, 100, rarityColors[weapon.rarity], 0.7);
+    drop.setData('light', light);
 
     // Floating animation
     this.scene.tweens.add({
-      targets: [drop, glow],
+      targets: drop,
       y: y - 6,
       duration: 600,
       yoyo: true,
       repeat: -1,
       ease: 'Sine.easeInOut',
+      onUpdate: () => {
+        // Keep light following the drop
+        light.setPosition(drop.x, drop.y);
+      },
     });
 
-    // Glow pulse
+    // Light pulse effect
     this.scene.tweens.add({
-      targets: glow,
-      alpha: 0.8,
-      scale: 1.2,
+      targets: light,
+      intensity: 1.0,
+      radius: 120,
       duration: 800,
       yoyo: true,
       repeat: -1,
@@ -124,12 +134,18 @@ export class LootDropManager {
 
     // Pop-in animation
     drop.setScale(0);
-    glow.setScale(0);
+    light.setIntensity(0);
     this.scene.tweens.add({
-      targets: [drop, glow],
+      targets: drop,
       scale: 1,
       duration: 250,
       ease: 'Back.easeOut',
+    });
+    this.scene.tweens.add({
+      targets: light,
+      intensity: 0.7,
+      duration: 250,
+      ease: 'Quad.easeOut',
     });
   }
 
@@ -137,6 +153,9 @@ export class LootDropManager {
     // Spawn multiple coins for larger amounts
     const coinCount = Math.min(Math.ceil(amount / 10), 5);
     const totalAmount = amount;
+
+    // Add a single shared light for the gold pile
+    const light = this.scene.lights.addLight(x, y, 60, 0xffdd44, 0.4);
 
     for (let i = 0; i < coinCount; i++) {
       const offsetX = (Math.random() - 0.5) * 20;
@@ -146,7 +165,9 @@ export class LootDropManager {
 
       const coin = this.goldDrops.create(coinX, coinY, 'gold_coin') as Phaser.Physics.Arcade.Sprite;
       coin.setData('amount', Math.ceil(totalAmount / coinCount));
+      coin.setData('light', i === 0 ? light : null); // Only first coin owns the light
       coin.setDepth(5);
+      coin.setPipeline('Light2D');
 
       // Pop-out animation
       coin.setScale(0);
@@ -173,6 +194,16 @@ export class LootDropManager {
         });
       });
     }
+
+    // Subtle light shimmer
+    this.scene.tweens.add({
+      targets: light,
+      intensity: 0.6,
+      duration: 500,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
   }
 
   // === PICKUP HANDLERS ===
@@ -183,13 +214,13 @@ export class LootDropManager {
   ): void {
     const itemSprite = itemObj as Phaser.Physics.Arcade.Sprite;
     const item = itemSprite.getData('item') as Item;
-    const glow = itemSprite.getData('glow') as Phaser.GameObjects.Sprite;
+    const light = itemSprite.getData('light') as Phaser.GameObjects.Light;
 
     if (item && this.player.pickupItem(item)) {
       this.showPickupText(itemSprite.x, itemSprite.y, item);
       this.audioSystem.play('sfx_pickup', 0.4);
       this.scene.events.emit('itemCollected');
-      if (glow) glow.destroy();
+      if (light) this.scene.lights.removeLight(light);
       itemSprite.destroy();
     }
   }
@@ -200,7 +231,7 @@ export class LootDropManager {
   ): void {
     const weaponSprite = weaponObj as Phaser.Physics.Arcade.Sprite;
     const weapon = weaponSprite.getData('weapon') as Weapon;
-    const glow = weaponSprite.getData('glow') as Phaser.GameObjects.Sprite;
+    const light = weaponSprite.getData('light') as Phaser.GameObjects.Light;
 
     if (weapon) {
       // Convert weapon to item and add to inventory
@@ -210,7 +241,7 @@ export class LootDropManager {
         this.audioSystem.play('sfx_pickup', 0.5);
         this.scene.events.emit('itemCollected');
 
-        if (glow) glow.destroy();
+        if (light) this.scene.lights.removeLight(light);
         weaponSprite.destroy();
       } else {
         // Inventory full - emit event for GameScene to show message
@@ -232,9 +263,15 @@ export class LootDropManager {
     this.goldDrops.remove(coin, false, false);
 
     const amount = coin.getData('amount') as number;
+    const light = coin.getData('light') as Phaser.GameObjects.Light;
 
     this.player.addGold(amount);
     this.audioSystem.play('sfx_pickup', 0.3);
+
+    // Remove the light if this coin owns it
+    if (light) {
+      this.scene.lights.removeLight(light);
+    }
 
     // Collect animation - fly to HUD
     this.scene.tweens.killTweensOf(coin);

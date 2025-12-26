@@ -98,6 +98,7 @@ export class HazardSystem {
 
       const sprite = this.scene.add.sprite(worldX, worldY, 'spike_trap');
       sprite.setDepth(1);
+      sprite.setPipeline('Light2D');
 
       // Randomize initial state and timing
       const isActive = Math.random() < 0.3;
@@ -127,6 +128,7 @@ export class HazardSystem {
 
       const sprite = this.scene.add.sprite(worldX, worldY, 'lava_pit');
       sprite.setDepth(1);
+      sprite.setPipeline('Light2D');
 
       // Add bubbling animation
       this.scene.tweens.add({
@@ -189,6 +191,7 @@ export class HazardSystem {
 
         const sprite = this.scene.add.sprite(worldX, worldY, 'arrow_shooter');
         sprite.setDepth(3);
+        sprite.setPipeline('Light2D');
 
         // Rotate based on direction
         if (direction.x === 1) sprite.setAngle(0);
@@ -287,6 +290,7 @@ export class HazardSystem {
     ) as Phaser.Physics.Arcade.Sprite;
 
     arrow.setDepth(8);
+    arrow.setPipeline('Light2D');
     arrow.setData('damage', this.ARROW_DAMAGE + this.floor);
 
     // Set rotation based on direction

@@ -22,8 +22,6 @@ export class RoomManager {
   private currentRoomId: number = -1;
   private doorGroup: Phaser.Physics.Arcade.StaticGroup;
   private darknessOverlay: Phaser.GameObjects.Graphics | null = null;
-  private fogOfWar: Phaser.GameObjects.Graphics | null = null;
-  private revealedTiles: Set<string> = new Set();
 
   constructor(scene: Phaser.Scene, dungeonData: DungeonData) {
     this.scene = scene;
@@ -32,10 +30,7 @@ export class RoomManager {
 
     this.initializeRooms();
     this.createDarknessOverlay();
-    this.createFogOfWar();
-
-    // Reveal spawn room (room 0) and its connecting corridors
-    this.revealRoom(this.dungeonData.rooms[0]);
+    // Fog of war removed - we use unlit torches for unexplored room darkness instead
   }
 
   private createDarknessOverlay(): void {
@@ -43,106 +38,6 @@ export class RoomManager {
     this.darknessOverlay = this.scene.add.graphics();
     this.darknessOverlay.setDepth(45); // Below UI, above most game elements
     this.darknessOverlay.setVisible(false);
-  }
-
-  private createFogOfWar(): void {
-    // Fog of war covers unvisited rooms
-    this.fogOfWar = this.scene.add.graphics();
-    this.fogOfWar.setDepth(44); // Just below the active room darkness
-    this.updateFogOfWar();
-  }
-
-  private updateFogOfWar(): void {
-    if (!this.fogOfWar) return;
-
-    this.fogOfWar.clear();
-    this.fogOfWar.fillStyle(0x000000, 0.5);
-
-    // Draw darkness over all unrevealed floor tiles
-    const tiles = this.dungeonData.tiles;
-    for (let y = 0; y < tiles.length; y++) {
-      for (let x = 0; x < tiles[y].length; x++) {
-        // Skip walls
-        if (tiles[y][x] === 1) continue;
-
-        // Skip revealed tiles
-        const key = `${x},${y}`;
-        if (this.revealedTiles.has(key)) continue;
-
-        // Fog this floor tile
-        this.fogOfWar.fillRect(
-          x * TILE_SIZE,
-          y * TILE_SIZE,
-          TILE_SIZE,
-          TILE_SIZE
-        );
-      }
-    }
-  }
-
-  private revealRoom(room: Room): void {
-    // Reveal all tiles in the room
-    for (let y = room.y; y < room.y + room.height; y++) {
-      for (let x = room.x; x < room.x + room.width; x++) {
-        this.revealedTiles.add(`${x},${y}`);
-      }
-    }
-
-    // Flood-fill to reveal connected corridors
-    this.revealConnectedCorridors(room);
-    this.updateFogOfWar();
-  }
-
-  private revealConnectedCorridors(room: Room): void {
-    const tiles = this.dungeonData.tiles;
-    const toCheck: { x: number; y: number }[] = [];
-
-    // Start from room edges
-    for (let x = room.x; x < room.x + room.width; x++) {
-      toCheck.push({ x, y: room.y - 1 }); // Above
-      toCheck.push({ x, y: room.y + room.height }); // Below
-    }
-    for (let y = room.y; y < room.y + room.height; y++) {
-      toCheck.push({ x: room.x - 1, y }); // Left
-      toCheck.push({ x: room.x + room.width, y }); // Right
-    }
-
-    // Flood-fill through corridors (stop at other rooms)
-    while (toCheck.length > 0) {
-      const pos = toCheck.pop()!;
-      const key = `${pos.x},${pos.y}`;
-
-      // Skip if out of bounds, already revealed, or is a wall
-      if (pos.y < 0 || pos.y >= tiles.length || pos.x < 0 || pos.x >= tiles[0].length) continue;
-      if (this.revealedTiles.has(key)) continue;
-      if (tiles[pos.y][pos.x] === 1) continue;
-
-      // Check if this tile is inside an unvisited room - if so, stop
-      const inUnvisitedRoom = this.isInUnvisitedRoom(pos.x, pos.y);
-      if (inUnvisitedRoom) continue;
-
-      // Reveal this corridor tile
-      this.revealedTiles.add(key);
-
-      // Add neighbors to check
-      toCheck.push({ x: pos.x - 1, y: pos.y });
-      toCheck.push({ x: pos.x + 1, y: pos.y });
-      toCheck.push({ x: pos.x, y: pos.y - 1 });
-      toCheck.push({ x: pos.x, y: pos.y + 1 });
-    }
-  }
-
-  private isInUnvisitedRoom(x: number, y: number): boolean {
-    for (const roomData of this.roomDataMap.values()) {
-      if (roomData.state === RoomState.UNVISITED) {
-        const room = roomData.room;
-        if (x >= room.x && x < room.x + room.width &&
-            y >= room.y && y < room.y + room.height) {
-          return true;
-        }
-      }
-    }
-    return false;
   }
 
   private initializeRooms(): void {
@@ -244,9 +139,6 @@ export class RoomManager {
     roomData.state = RoomState.ACTIVE;
     roomData.enemyCount = enemyCount;
 
-    // Reveal this room and connected corridors
-    this.revealRoom(roomData.room);
-
     // Close all doors
     for (const door of roomData.doors) {
       door.setVisible(true);
@@ -270,8 +162,7 @@ export class RoomManager {
     this.darknessOverlay.setVisible(true);
     this.darknessOverlay.fillStyle(0x000000, 0.4);
 
-    // Darken only REVEALED floor tiles outside the current room
-    // (unrevealed tiles already have fog of war, don't double-darken)
+    // Darken all floor tiles outside the current room
     const tiles = this.dungeonData.tiles;
     for (let y = 0; y < tiles.length; y++) {
       for (let x = 0; x < tiles[y].length; x++) {
@@ -284,11 +175,7 @@ export class RoomManager {
           continue;
         }
 
-        // Skip unrevealed tiles (they already have fog of war)
-        const key = `${x},${y}`;
-        if (!this.revealedTiles.has(key)) continue;
-
-        // Darken this revealed floor tile
+        // Darken this floor tile
         this.darknessOverlay.fillRect(
           x * TILE_SIZE,
           y * TILE_SIZE,

@@ -224,6 +224,7 @@ export class NPC extends Phaser.Physics.Arcade.Sprite {
     }
 
     this.setDepth(5);
+    this.setPipeline('Light2D');
 
     // Add floating animation
     scene.tweens.add({
@@ -235,13 +236,11 @@ export class NPC extends Phaser.Physics.Arcade.Sprite {
       ease: 'Sine.easeInOut',
     });
 
-    // Add subtle glow
-    const glow = scene.add.circle(x, y, TILE_SIZE * 0.6, data.tint || 0x8b5cf6, 0.2);
-    glow.setDepth(4);
+    // Add real point light for NPC glow
+    const npcLight = scene.lights.addLight(x, y, 70, data.tint || 0x8b5cf6, 0.4);
     scene.tweens.add({
-      targets: glow,
-      alpha: { from: 0.1, to: 0.3 },
-      scale: { from: 0.9, to: 1.1 },
+      targets: npcLight,
+      intensity: { from: 0.3, to: 0.5 },
       duration: 2000,
       yoyo: true,
       repeat: -1,

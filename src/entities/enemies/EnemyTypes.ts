@@ -3,37 +3,35 @@ import { Enemy } from '../Enemy';
 import { Player } from '../Player';
 import { TILE_SIZE } from '../../utils/constants';
 
-// Fast enemy - low HP, high speed, charges at player
+// Fast enemy - low HP, high speed, charges at player (uses Imp sprite)
 export class FastEnemy extends Enemy {
   constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
-    super(scene, x, y, 'enemy_fast', {
+    super(scene, x, y, 'imp_idle', {
       hp: 15 + floor * 3,
       attack: 4 + floor,
       defense: 0,
       speed: 120 + floor * 8,
       xpValue: 15 + floor * 3,
     });
-    this.setTint(0x00ff00); // Green tint
-    this.setScale(0.8);
+    this.setupSpriteAnimations('imp', true);
   }
 }
 
-// Tank enemy - high HP, slow, high damage
+// Tank enemy - high HP, slow, high damage (uses Demon Brute sprite)
 export class TankEnemy extends Enemy {
   constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
-    super(scene, x, y, 'enemy_tank', {
+    super(scene, x, y, 'demon_brute_idle', {
       hp: 50 + floor * 10,
       attack: 8 + floor * 2,
       defense: 3 + floor,
       speed: 40 + floor * 2,
       xpValue: 35 + floor * 8,
     });
-    this.setTint(0x8844ff); // Purple tint
-    this.setScale(1.3);
+    this.setupSpriteAnimations('demon_brute', true);
   }
 }
 
-// Ranged enemy - shoots projectiles, keeps distance
+// Ranged enemy - shoots projectiles, keeps distance (uses Cultist sprite)
 export class RangedEnemy extends Enemy {
   private shootCooldown: number = 0;
   private readonly SHOOT_COOLDOWN_MS = 2000;
@@ -41,14 +39,14 @@ export class RangedEnemy extends Enemy {
   private projectileGroup: Phaser.Physics.Arcade.Group | null = null;
 
   constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
-    super(scene, x, y, 'enemy_ranged', {
+    super(scene, x, y, 'cultist_idle', {
       hp: 20 + floor * 4,
       attack: 6 + floor * 2,
       defense: 1,
       speed: 50 + floor * 3,
       xpValue: 30 + floor * 6,
     });
-    this.setTint(0xffaa00); // Orange tint
+    this.setupSpriteAnimations('cultist', true);
   }
 
   setProjectileGroup(group: Phaser.Physics.Arcade.Group): void {
@@ -237,20 +235,20 @@ export class BossEnemy extends Enemy {
 
 // ==================== SEVEN CAPITAL SINS ====================
 
-// Sloth - Very slow, high HP, creates slowing aura around it
+// Sloth - Very slow, high HP, creates slowing aura around it (uses Sloth boss sprite)
 export class SlothEnemy extends Enemy {
   private slowingAura: Phaser.GameObjects.Graphics | null = null;
   private readonly SLOW_RADIUS = TILE_SIZE * 3;
 
   constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
-    super(scene, x, y, 'enemy_sloth', {
+    super(scene, x, y, 'sloth_idle', {
       hp: 80 + floor * 15,
       attack: 4 + floor,
       defense: 4 + floor,
       speed: 25 + floor * 2,
       xpValue: 40 + floor * 8,
     });
-    this.setScale(1.2);
+    this.setupSpriteAnimations('sloth', false);
     this.createSlowingAura();
   }
 
@@ -293,17 +291,17 @@ export class SlothEnemy extends Enemy {
   }
 }
 
-// Gluttony - Large, slow, heals when it successfully hits the player
+// Gluttony - Large, slow, heals when it successfully hits the player (uses Gluttony boss sprite)
 export class GluttonyEnemy extends Enemy {
   constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
-    super(scene, x, y, 'enemy_gluttony', {
+    super(scene, x, y, 'gluttony_idle', {
       hp: 70 + floor * 12,
       attack: 8 + floor * 2,
       defense: 2 + floor,
       speed: 35 + floor * 2,
       xpValue: 45 + floor * 10,
     });
-    this.setScale(1.4);
+    this.setupSpriteAnimations('gluttony', false);
   }
 
   // Override to add heal on attack
@@ -322,16 +320,17 @@ export class GluttonyEnemy extends Enemy {
   }
 }
 
-// Greed - Fast, steals gold on hit, flees when player has no gold
+// Greed - Fast, steals gold on hit, flees when player has no gold (uses Greed boss sprite)
 export class GreedEnemy extends Enemy {
   constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
-    super(scene, x, y, 'enemy_greed', {
+    super(scene, x, y, 'greed_idle', {
       hp: 25 + floor * 5,
       attack: 3 + floor,
       defense: 0,
       speed: 100 + floor * 8,
       xpValue: 35 + floor * 6,
     });
+    this.setupSpriteAnimations('greed', false);
   }
 
   update(time: number, delta: number): void {
@@ -370,18 +369,19 @@ export class GreedEnemy extends Enemy {
   }
 }
 
-// Envy - Copies the player's attack stat, shadowy appearance
+// Envy - Copies the player's attack stat, shadowy appearance (uses Envy boss sprite)
 export class EnvyEnemy extends Enemy {
   private hasCopied: boolean = false;
 
   constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
-    super(scene, x, y, 'enemy_envy', {
+    super(scene, x, y, 'envy_idle', {
       hp: 35 + floor * 6,
       attack: 5 + floor, // Base attack, will be overwritten
       defense: 1 + floor,
       speed: 70 + floor * 4,
       xpValue: 40 + floor * 8,
     });
+    this.setupSpriteAnimations('envy', false);
   }
 
   update(time: number, delta: number): void {
@@ -407,19 +407,20 @@ export class EnvyEnemy extends Enemy {
   }
 }
 
-// Wrath - Gets stronger when damaged, aggressive
+// Wrath - Gets stronger when damaged, aggressive (uses Wrath boss sprite)
 export class WrathEnemy extends Enemy {
   private isEnraged: boolean = false;
   private baseAttack: number;
 
   constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
-    super(scene, x, y, 'enemy_wrath', {
+    super(scene, x, y, 'wrath_idle', {
       hp: 45 + floor * 8,
       attack: 10 + floor * 2,
       defense: 2 + floor,
       speed: 80 + floor * 4,
       xpValue: 50 + floor * 10,
     });
+    this.setupSpriteAnimations('wrath', false);
     this.baseAttack = this.attack;
   }
 
@@ -462,20 +463,21 @@ export class WrathEnemy extends Enemy {
   }
 }
 
-// Lust - Pulls the player toward it with magnetic effect
+// Lust - Pulls the player toward it with magnetic effect (uses Lust boss sprite)
 export class LustEnemy extends Enemy {
   private readonly PULL_RADIUS = TILE_SIZE * 5;
   private readonly PULL_STRENGTH = 30;
   private glowEffect: Phaser.GameObjects.Graphics | null = null;
 
   constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
-    super(scene, x, y, 'enemy_lust', {
+    super(scene, x, y, 'lust_idle', {
       hp: 25 + floor * 4,
       attack: 4 + floor,
       defense: 0,
       speed: 60 + floor * 3,
       xpValue: 35 + floor * 6,
     });
+    this.setupSpriteAnimations('lust', false);
     this.createGlow();
   }
 
@@ -522,19 +524,19 @@ export class LustEnemy extends Enemy {
   }
 }
 
-// Pride - High defense, reflects damage back to attacker
+// Pride - High defense, reflects damage back to attacker (uses Pride boss sprite)
 export class PrideEnemy extends Enemy {
   private readonly REFLECT_PERCENT = 0.25;
 
   constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
-    super(scene, x, y, 'enemy_pride', {
+    super(scene, x, y, 'pride_idle', {
       hp: 60 + floor * 10,
       attack: 8 + floor * 2,
       defense: 5 + floor * 2,
       speed: 50 + floor * 3,
       xpValue: 60 + floor * 12,
     });
-    this.setScale(1.1);
+    this.setupSpriteAnimations('pride', true);
   }
 
   takeDamage(amount: number): void {

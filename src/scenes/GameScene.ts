@@ -24,6 +24,8 @@ import { progressionManager } from '../systems/ProgressionSystem';
 import { SinWorld, getWorldConfig } from '../config/WorldConfig';
 import { DialogueUI } from '../ui/DialogueUI';
 import { NPC, createLostSoulData, createWarningSpirit } from '../entities/NPC';
+import { hasWangTileset, getWangMapping, getWangTileFrame, getSimpleCornerValues } from '../systems/WangTileSystem';
+import { LightingSystem } from '../systems/LightingSystem';
 
 export class GameScene extends Phaser.Scene {
   private player!: Player;
@@ -51,6 +53,7 @@ export class GameScene extends Phaser.Scene {
   private hazardSystem!: HazardSystem;
   private loreSystem!: LoreSystem;
   private loreObjects!: Phaser.Physics.Arcade.Group;
+  private lightingSystem!: LightingSystem;
   private activeLoreModal: Phaser.GameObjects.Container | null = null;
   private lorePrompt!: Phaser.GameObjects.Text;
   private dialogueUI!: DialogueUI;
@@ -102,9 +105,27 @@ export class GameScene extends Phaser.Scene {
 
     this.createDungeonTiles();
 
+    // Initialize lighting system
+    this.lightingSystem = new LightingSystem(this);
+    this.lightingSystem.enable();
+
+    // Set world-specific lighting colors (affects torch colors, rim lights, ambient)
+    this.lightingSystem.setWorld(this.currentWorld);
+
+    // Create subtle rim lights along wall edges - separates walls from floor visually
+    this.lightingSystem.createWallRimLights(this.dungeon.tiles, TILE_SIZE);
+
+    // Create subtle drifting shadow overlay for ambient darkness variation
+    const dungeonWidth = this.dungeon.tiles[0].length * TILE_SIZE;
+    const dungeonHeight = this.dungeon.tiles.length * TILE_SIZE;
+    this.lightingSystem.createShadowOverlay(dungeonWidth, dungeonHeight);
+
     const spawnX = this.dungeon.spawnPoint.x * TILE_SIZE + TILE_SIZE / 2;
     const spawnY = this.dungeon.spawnPoint.y * TILE_SIZE + TILE_SIZE / 2;
     this.player = new Player(this, spawnX, spawnY);
+
+    // Create player torch light
+    this.lightingSystem.createPlayerTorch(spawnX, spawnY);
 
     // Restore player from ShopScene if coming from there
     const shopData = this.registry.get('shopData') as {
@@ -207,9 +228,18 @@ export class GameScene extends Phaser.Scene {
     // Allow movement even during dialogue
     this.player.update(time, delta);
 
+    // Update lighting system
+    this.lightingSystem.update(delta);
+    this.lightingSystem.updatePlayerTorch(this.player.x, this.player.y);
+
     // Check for room entry (returns room if entering a new unvisited room)
     const enteredRoom = this.roomManager.update(this.player.x, this.player.y);
     if (enteredRoom) {
+      // Light up the torches in this room when it's sealed
+      if (this.lightingSystem) {
+        this.lightingSystem.lightRoom(enteredRoom.id);
+      }
+
       const exitRoom = this.dungeon.rooms[this.dungeon.rooms.length - 1];
       this.enemySpawnManager.spawnEnemiesInRoom(enteredRoom, this.isBossFloor, exitRoom);
       this.hazardSystem.spawnHazardsInRoom(enteredRoom, this.dungeon);
@@ -241,7 +271,12 @@ export class GameScene extends Phaser.Scene {
     this.floorLayer = this.add.group();
     this.wallLayer = this.physics.add.staticGroup();
 
-    // Determine wall texture based on current world
+    // Check if we have a Wang tileset for this world
+    const useWangTiles = this.currentWorld && hasWangTileset(this.currentWorld);
+    const wangMapping = useWangTiles ? getWangMapping(this.currentWorld!) : null;
+    const tilesetKey = useWangTiles ? `tileset_${this.currentWorld}` : null;
+
+    // Fallback textures for non-Wang rendering
     const wallTexture = this.currentWorld ? `wall_${this.currentWorld}` : 'wall';
 
     for (let y = 0; y < DUNGEON_HEIGHT; y++) {
@@ -249,18 +284,49 @@ export class GameScene extends Phaser.Scene {
         const tileX = x * TILE_SIZE;
         const tileY = y * TILE_SIZE;
 
-        if (this.dungeon.tiles[y][x] === 1) {
-          const wall = this.wallLayer.create(tileX, tileY, wallTexture) as Phaser.Physics.Arcade.Sprite;
-          wall.setOrigin(0, 0);
-          wall.setImmovable(true);
-          wall.refreshBody();
-        } else if (this.dungeon.tiles[y][x] === 0) {
-          // Determine floor texture based on room type
-          const room = this.getRoomAtTile(x, y);
-          const floorTexture = this.getFloorTextureForRoom(room);
-          const floor = this.add.sprite(tileX, tileY, floorTexture).setOrigin(0, 0);
-          floor.setDepth(0);
-          this.floorLayer.add(floor);
+        if (useWangTiles && wangMapping && tilesetKey && this.textures.exists(tilesetKey)) {
+          // Use Wang tileset for connected textures
+          const corners = getSimpleCornerValues(
+            this.dungeon.tiles, x, y, DUNGEON_WIDTH, DUNGEON_HEIGHT
+          );
+          const frameIndex = getWangTileFrame(
+            corners.nw, corners.ne, corners.sw, corners.se, wangMapping
+          );
+
+          if (this.dungeon.tiles[y][x] === 1) {
+            // Wall tile with Wang texture
+            const wall = this.wallLayer.create(tileX, tileY, tilesetKey, frameIndex) as Phaser.Physics.Arcade.Sprite;
+            wall.setOrigin(0, 0);
+            wall.setImmovable(true);
+            wall.refreshBody();
+            // Apply Light2D pipeline for dynamic lighting
+            wall.setPipeline('Light2D');
+          } else {
+            // Floor tile with Wang texture
+            const floor = this.add.sprite(tileX, tileY, tilesetKey, frameIndex).setOrigin(0, 0);
+            floor.setDepth(0);
+            // Apply Light2D pipeline for dynamic lighting
+            floor.setPipeline('Light2D');
+            this.floorLayer.add(floor);
+          }
+        } else {
+          // Fallback to simple textures
+          if (this.dungeon.tiles[y][x] === 1) {
+            const wall = this.wallLayer.create(tileX, tileY, wallTexture) as Phaser.Physics.Arcade.Sprite;
+            wall.setOrigin(0, 0);
+            wall.setImmovable(true);
+            wall.refreshBody();
+            // Apply Light2D pipeline for dynamic lighting
+            wall.setPipeline('Light2D');
+          } else if (this.dungeon.tiles[y][x] === 0) {
+            const room = this.getRoomAtTile(x, y);
+            const floorTexture = this.getFloorTextureForRoom(room);
+            const floor = this.add.sprite(tileX, tileY, floorTexture).setOrigin(0, 0);
+            floor.setDepth(0);
+            // Apply Light2D pipeline for dynamic lighting
+            floor.setPipeline('Light2D');
+            this.floorLayer.add(floor);
+          }
         }
       }
     }
@@ -299,7 +365,9 @@ export class GameScene extends Phaser.Scene {
   private addRoomDecorations(): void {
     for (const room of this.dungeon.rooms) {
       // Add candles to all rooms for atmosphere
-      this.addWallCandles(room);
+      // Spawn room (id 0) starts lit, other rooms start dark until activated
+      const startLit = room.id === 0;
+      this.addWallCandles(room, startLit);
 
       // Add lore objects to some rooms
       this.tryAddLoreObject(room);
@@ -338,20 +406,17 @@ export class GameScene extends Phaser.Scene {
     chest.setImmovable(true);
     chest.setData('opened', false);
     chest.setData('room', room);
+    chest.setPipeline('Light2D');
 
-    // Add glow effect
-    const glow = this.add.sprite(chestX, chestY, 'weapon_drop_glow');
-    glow.setDepth(2);
-    glow.setTint(0xffd700);
-    glow.setAlpha(0.4);
-    glow.setScale(1.5);
-    chest.setData('glow', glow);
+    // Add real point light for glow
+    const light = this.lights.addLight(chestX, chestY, 100, 0xffd700, 0.7);
+    chest.setData('light', light);
 
     // Pulse animation
     this.tweens.add({
-      targets: glow,
-      alpha: 0.7,
-      scale: 1.8,
+      targets: light,
+      intensity: 1.0,
+      radius: 120,
       duration: 800,
       yoyo: true,
       repeat: -1,
@@ -375,11 +440,11 @@ export class GameScene extends Phaser.Scene {
       this.minimapUI.markChestOpened(room.id);
     }
 
-    // Remove glow
-    const glow = chest.getData('glow') as Phaser.GameObjects.Sprite;
-    if (glow) {
-      this.tweens.killTweensOf(glow);
-      glow.destroy();
+    // Remove light
+    const light = chest.getData('light') as Phaser.GameObjects.Light;
+    if (light) {
+      this.tweens.killTweensOf(light);
+      this.lights.removeLight(light);
     }
 
     // Spawn loot - guaranteed rare+ item and weapon
@@ -413,20 +478,17 @@ export class GameScene extends Phaser.Scene {
     shrine.setImmovable(true);
     shrine.setData('used', false);
     shrine.setData('room', room);
+    shrine.setPipeline('Light2D');
 
-    // Add ambient glow
-    const glow = this.add.sprite(shrineX, shrineY, 'weapon_drop_glow');
-    glow.setDepth(2);
-    glow.setTint(0x22d3ee);
-    glow.setAlpha(0.5);
-    glow.setScale(2);
-    shrine.setData('glow', glow);
+    // Add real point light for glow
+    const light = this.lights.addLight(shrineX, shrineY, 120, 0x22d3ee, 0.8);
+    shrine.setData('light', light);
 
     // Pulse animation
     this.tweens.add({
-      targets: glow,
-      alpha: 0.8,
-      scale: 2.5,
+      targets: light,
+      intensity: 1.1,
+      radius: 150,
       duration: 1000,
       yoyo: true,
       repeat: -1,
@@ -463,15 +525,15 @@ export class GameScene extends Phaser.Scene {
     const healAmount = this.player.maxHp - this.player.hp;
     this.player.hp = this.player.maxHp;
 
-    // Remove glow and fade shrine
-    const glow = shrine.getData('glow') as Phaser.GameObjects.Sprite;
-    if (glow) {
-      this.tweens.killTweensOf(glow);
+    // Remove light and fade shrine
+    const light = shrine.getData('light') as Phaser.GameObjects.Light;
+    if (light) {
+      this.tweens.killTweensOf(light);
       this.tweens.add({
-        targets: glow,
-        alpha: 0,
+        targets: light,
+        intensity: 0,
         duration: 500,
-        onComplete: () => glow.destroy(),
+        onComplete: () => this.lights.removeLight(light),
       });
     }
 
@@ -522,6 +584,7 @@ export class GameScene extends Phaser.Scene {
       );
       marker.setDepth(2);
       marker.setAlpha(0.7);
+      marker.setPipeline('Light2D');
 
       // Subtle pulse
       this.tweens.add({
@@ -667,20 +730,17 @@ export class GameScene extends Phaser.Scene {
     loreSprite.setImmovable(true);
     loreSprite.setData('loreEntry', lore);
     loreSprite.setData('discovered', false);
+    loreSprite.setPipeline('Light2D');
 
     // Visual effects based on type
     if (lore.type === 'tablet') {
-      // Tablets have a subtle glow
-      const glow = this.add.sprite(loreX, loreY, 'lore_tablet');
-      glow.setDepth(2);
-      glow.setTint(0x22d3ee);
-      glow.setAlpha(0.3);
-      glow.setScale(1.3);
-      loreSprite.setData('glow', glow);
+      // Tablets have a subtle point light
+      const light = this.lights.addLight(loreX, loreY, 60, 0x22d3ee, 0.4);
+      loreSprite.setData('light', light);
 
       this.tweens.add({
-        targets: glow,
-        alpha: 0.5,
+        targets: light,
+        intensity: 0.6,
         duration: 1500,
         yoyo: true,
         repeat: -1,
@@ -747,15 +807,15 @@ export class GameScene extends Phaser.Scene {
       case 'tablet':
         this.audioSystem.play('sfx_tablet', 0.4);
         this.showLoreModal(loreEntry);
-        // Fade out glow on first discovery
+        // Fade out light on first discovery
         if (!wasDiscovered) {
-          const glow = loreSprite.getData('glow') as Phaser.GameObjects.Sprite;
-          if (glow) {
+          const light = loreSprite.getData('light') as Phaser.GameObjects.Light;
+          if (light) {
             this.tweens.add({
-              targets: glow,
-              alpha: 0,
+              targets: light,
+              intensity: 0,
               duration: 500,
-              onComplete: () => glow.destroy(),
+              onComplete: () => this.lights.removeLight(light),
             });
           }
         }
@@ -935,10 +995,11 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private addWallCandles(room: Room): void {
+  private addWallCandles(room: Room, startLit: boolean = true): void {
     // Add candles along walls for atmosphere
     // Place candles at intervals along each wall, offset from corners
     // Only place candles where there's actually a wall tile
+    // Torches start unlit in unvisited rooms, light up when room is sealed
 
     const tiles = this.dungeon.tiles;
     const candlePositions: { x: number; y: number }[] = [];
@@ -981,16 +1042,23 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    // Create candle sprites with flickering animation
+    // Create candle sprites with flickering animation and actual lights
     candlePositions.forEach((pos) => {
-      const candle = this.add.sprite(
-        pos.x * TILE_SIZE + TILE_SIZE / 2,
-        pos.y * TILE_SIZE + TILE_SIZE / 2,
-        'candle'
-      );
-      candle.setDepth(5);
+      const candleX = pos.x * TILE_SIZE + TILE_SIZE / 2;
+      const candleY = pos.y * TILE_SIZE + TILE_SIZE / 2;
 
-      // Subtle flicker animation
+      const candle = this.add.sprite(candleX, candleY, 'candle');
+      candle.setDepth(5);
+      // Apply Light2D pipeline so candle sprite is lit properly
+      candle.setPipeline('Light2D');
+
+      // Create actual point light at candle position
+      // Pass room ID so we can light up torches when room is activated
+      if (this.lightingSystem) {
+        this.lightingSystem.createTorchLight(candleX, candleY, undefined, room.id, startLit);
+      }
+
+      // Subtle flicker animation for the sprite
       this.tweens.add({
         targets: candle,
         alpha: { from: 0.85, to: 1 },
@@ -1012,6 +1080,7 @@ export class GameScene extends Phaser.Scene {
     this.exit = this.physics.add.sprite(exitX, exitY, 'exit');
     this.exit.setDepth(1);
     this.exit.setImmovable(true);
+    this.exit.setPipeline('Light2D');
     if (this.exit.body) {
       this.exit.body.setSize(TILE_SIZE * 1.5, TILE_SIZE * 1.5);
     }

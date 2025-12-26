@@ -8,12 +8,14 @@ import { TILE_SIZE } from '../utils/constants';
 import { AudioSystem } from '../systems/AudioSystem';
 import { SaveSystem } from '../systems/SaveSystem';
 import { SinWorld, getAllWorlds, getWorldConfig } from '../config/WorldConfig';
+import { getSimpleCornerValues, getWangTileFrame, getWangMapping } from '../systems/WangTileSystem';
 import { progressionManager } from '../systems/ProgressionSystem';
 import { InventoryUI } from '../ui/InventoryUI';
 import { ShopUI } from '../ui/ShopUI';
 import { SettingsUI } from '../ui/SettingsUI';
 import { DialogueUI } from '../ui/DialogueUI';
 import { NPC, HUB_NPCS } from '../entities/NPC';
+import { LightingSystem } from '../systems/LightingSystem';
 
 interface PortalData {
   world: SinWorld;
@@ -37,6 +39,7 @@ export class HubScene extends Phaser.Scene {
   private victoryPortal: { sprite: Phaser.GameObjects.Sprite; glow: Phaser.GameObjects.Arc } | null = null;
   private dialogueUI!: DialogueUI;
   private hubNPCs: NPC[] = [];
+  private lightingSystem!: LightingSystem;
 
   // Hub dimensions (in tiles)
   private readonly HUB_WIDTH = 25;
@@ -56,8 +59,23 @@ export class HubScene extends Phaser.Scene {
       progressionManager.setProgression(savedData.progression);
     }
 
+    // Initialize lighting system with hub-specific lighting palette
+    this.lightingSystem = new LightingSystem(this);
+    this.lightingSystem.enable();
+    this.lightingSystem.setWorld('hub');
+
     // Create the hub room
     this.createRoom();
+
+    // Add wall rim lights for depth (separates walls from floor)
+    const hubTiles = this.buildHubTiles();
+    this.lightingSystem.createWallRimLights(hubTiles, TILE_SIZE);
+
+    // Add subtle shadow overlay for ambient darkness variation
+    this.lightingSystem.createShadowOverlay(
+      this.HUB_WIDTH * TILE_SIZE,
+      this.HUB_HEIGHT * TILE_SIZE
+    );
 
     // Create portals for each world
     this.createPortals();
@@ -72,6 +90,14 @@ export class HubScene extends Phaser.Scene {
     const spawnX = (this.HUB_WIDTH / 2) * TILE_SIZE;
     const spawnY = (this.HUB_HEIGHT / 2 + 2) * TILE_SIZE;
     this.player = new Player(this, spawnX, spawnY);
+
+    // Create player torch light
+    this.lightingSystem.createPlayerTorch(spawnX, spawnY);
+
+    // Add central fountain light (soft, warm glow)
+    const fountainX = (this.HUB_WIDTH / 2) * TILE_SIZE;
+    const fountainY = (this.HUB_HEIGHT / 2 - 1) * TILE_SIZE;
+    this.lights.addLight(fountainX, fountainY, 200, 0x88ccff, 0.7);
 
     // Restore player state from save
     if (savedData) {
@@ -112,19 +138,50 @@ export class HubScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Build hub tile array for lighting system (1=wall, 0=floor)
+   */
+  private buildHubTiles(): number[][] {
+    const tiles: number[][] = [];
+    for (let y = 0; y < this.HUB_HEIGHT; y++) {
+      tiles[y] = [];
+      for (let x = 0; x < this.HUB_WIDTH; x++) {
+        // Walls on edges
+        tiles[y][x] = (x === 0 || x === this.HUB_WIDTH - 1 || y === 0 || y === this.HUB_HEIGHT - 1) ? 1 : 0;
+      }
+    }
+    return tiles;
+  }
+
   private createRoom(): void {
-    // Create floor and walls
+    // Build tile array for Wang tile system (1=wall, 0=floor)
+    const tiles = this.buildHubTiles();
+
+    // Get Wang mapping for hub tileset
+    const wangMapping = getWangMapping('hub');
+    const useWangTiles = wangMapping && this.textures.exists('tileset_hub');
+
+    // Create floor and walls using Wang tiles
     for (let y = 0; y < this.HUB_HEIGHT; y++) {
       for (let x = 0; x < this.HUB_WIDTH; x++) {
         const worldX = x * TILE_SIZE;
         const worldY = y * TILE_SIZE;
 
-        // Walls on edges
-        if (x === 0 || x === this.HUB_WIDTH - 1 || y === 0 || y === this.HUB_HEIGHT - 1) {
-          this.add.image(worldX, worldY, 'wall_tavern').setOrigin(0, 0).setDepth(0);
+        if (useWangTiles && wangMapping) {
+          // Use Wang tileset for connected textures
+          const corners = getSimpleCornerValues(tiles, x, y, this.HUB_WIDTH, this.HUB_HEIGHT);
+          const frameIndex = getWangTileFrame(corners.nw, corners.ne, corners.sw, corners.se, wangMapping);
+          const tile = this.add.sprite(worldX, worldY, 'tileset_hub', frameIndex).setOrigin(0, 0).setDepth(0);
+          tile.setPipeline('Light2D');
         } else {
-          // Floor with slight variation
-          this.add.image(worldX, worldY, 'floor_tavern').setOrigin(0, 0).setDepth(0);
+          // Fallback to simple textures
+          if (tiles[y][x] === 1) {
+            const wall = this.add.image(worldX, worldY, 'wall_tavern').setOrigin(0, 0).setDepth(0);
+            wall.setPipeline('Light2D');
+          } else {
+            const floor = this.add.image(worldX, worldY, 'floor_tavern').setOrigin(0, 0).setDepth(0);
+            floor.setPipeline('Light2D');
+          }
         }
       }
     }
@@ -241,6 +298,10 @@ export class HubScene extends Phaser.Scene {
       const sprite = this.add.sprite(x, y, 'exit_portal');
       sprite.setTint(config.colors.primary);
       sprite.setDepth(2);
+      sprite.setPipeline('Light2D');
+
+      // Add colored light at each portal matching its world color
+      this.lights.addLight(x, y, 100, config.colors.portal, 0.4);
 
       // Subtle rotation for portal sprite
       this.tweens.add({
@@ -346,6 +407,7 @@ export class HubScene extends Phaser.Scene {
     // Fountain center
     this.fountain = this.add.sprite(x, y, 'fountain');
     this.fountain.setDepth(2);
+    this.fountain.setPipeline('Light2D');
 
     // Pulse effect on fountain
     this.tweens.add({
@@ -376,6 +438,7 @@ export class HubScene extends Phaser.Scene {
     // Shop NPC
     this.shopNPC = this.add.sprite(x, y, 'shopkeeper');
     this.shopNPC.setDepth(2);
+    this.shopNPC.setPipeline('Light2D');
 
     // Label
     const label = this.add.text(x, y + TILE_SIZE * 1.2, 'Shop', {
@@ -988,6 +1051,19 @@ export class HubScene extends Phaser.Scene {
     victorySprite.setTint(0xffd700);
     victorySprite.setScale(1.5);
     victorySprite.setDepth(5);
+    victorySprite.setPipeline('Light2D');
+
+    // Add bright golden light for victory portal
+    const victoryLight = this.lights.addLight(x, y, 150, 0xffd700, 1.0);
+    this.tweens.add({
+      targets: victoryLight,
+      intensity: 1.3,
+      radius: 180,
+      duration: 1000,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
 
     // Rotate the portal slightly for effect
     this.tweens.add({
@@ -1041,6 +1117,16 @@ export class HubScene extends Phaser.Scene {
   update(time: number, delta: number): void {
     if (this.player) {
       this.player.update(time, delta);
+
+      // Update player torch position
+      if (this.lightingSystem) {
+        this.lightingSystem.updatePlayerTorch(this.player.x, this.player.y);
+      }
+    }
+
+    // Update lighting system
+    if (this.lightingSystem) {
+      this.lightingSystem.update(delta);
     }
   }
 }

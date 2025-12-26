@@ -68,6 +68,10 @@ export class ShopScene extends Phaser.Scene {
     // Create the room
     this.createRoom();
 
+    // Enable lighting system
+    this.lights.enable();
+    this.lights.setAmbientColor(0x444444);
+
     // Create player at spawn position
     const spawnX = (this.ROOM_WIDTH / 2) * TILE_SIZE;
     const spawnY = (this.ROOM_HEIGHT - 3) * TILE_SIZE;
@@ -166,10 +170,12 @@ export class ShopScene extends Phaser.Scene {
 
         // Walls on edges
         if (x === 0 || x === this.ROOM_WIDTH - 1 || y === 0 || y === this.ROOM_HEIGHT - 1) {
-          this.add.image(worldX, worldY, 'wall_tavern').setOrigin(0, 0).setDepth(0);
+          const wall = this.add.image(worldX, worldY, 'wall_tavern').setOrigin(0, 0).setDepth(0);
+          wall.setPipeline('Light2D');
         } else {
           // Floor
-          this.add.image(worldX, worldY, 'floor_tavern').setOrigin(0, 0).setDepth(0);
+          const floor = this.add.image(worldX, worldY, 'floor_tavern').setOrigin(0, 0).setDepth(0);
+          floor.setPipeline('Light2D');
         }
       }
     }
@@ -234,18 +240,19 @@ export class ShopScene extends Phaser.Scene {
     ];
 
     candlePositions.forEach((pos) => {
-      const candle = this.add.sprite(
-        pos.x * TILE_SIZE + TILE_SIZE / 2,
-        pos.y * TILE_SIZE + TILE_SIZE / 2,
-        'candle'
-      );
+      const candleX = pos.x * TILE_SIZE + TILE_SIZE / 2;
+      const candleY = pos.y * TILE_SIZE + TILE_SIZE / 2;
+      const candle = this.add.sprite(candleX, candleY, 'candle');
       candle.setDepth(5);
+      candle.setPipeline('Light2D');
 
-      // Flickering animation
+      // Real point light for candle
+      const candleLight = this.lights.addLight(candleX, candleY, 80, 0xffaa44, 0.5);
+
+      // Flickering light effect
       this.tweens.add({
-        targets: candle,
-        alpha: { from: 0.85, to: 1 },
-        scaleX: { from: 0.95, to: 1.05 },
+        targets: candleLight,
+        intensity: { from: 0.4, to: 0.6 },
         duration: Phaser.Math.Between(150, 300),
         yoyo: true,
         repeat: -1,
@@ -276,17 +283,14 @@ export class ShopScene extends Phaser.Scene {
     this.shopkeeper = this.physics.add.sprite(shopkeeperX, shopkeeperY, 'shopkeeper');
     this.shopkeeper.setImmovable(true);
     this.shopkeeper.setDepth(5);
+    this.shopkeeper.setPipeline('Light2D');
 
-    // Angel glow (holy light)
-    const shopkeeperGlow = this.add.sprite(shopkeeperX, shopkeeperY, 'weapon_drop_glow');
-    shopkeeperGlow.setDepth(4);
-    shopkeeperGlow.setTint(0xffffff);
-    shopkeeperGlow.setAlpha(0.3);
-    shopkeeperGlow.setScale(1.5);
+    // Angel glow (holy light) - real point light
+    const shopkeeperLight = this.lights.addLight(shopkeeperX, shopkeeperY, 100, 0xffffee, 0.6);
     this.tweens.add({
-      targets: shopkeeperGlow,
-      alpha: 0.5,
-      scale: 1.8,
+      targets: shopkeeperLight,
+      intensity: 0.9,
+      radius: 120,
       duration: 1500,
       yoyo: true,
       repeat: -1,
@@ -305,17 +309,14 @@ export class ShopScene extends Phaser.Scene {
     this.fountain = this.physics.add.sprite(fountainX, fountainY, 'fountain');
     this.fountain.setImmovable(true);
     this.fountain.setDepth(5);
+    this.fountain.setPipeline('Light2D');
 
-    // Fountain glow
-    const fountainGlow = this.add.sprite(fountainX, fountainY, 'weapon_drop_glow');
-    fountainGlow.setDepth(4);
-    fountainGlow.setTint(0x3b82f6);
-    fountainGlow.setAlpha(0.4);
-    fountainGlow.setScale(1.5);
+    // Fountain glow - real point light
+    const fountainLight = this.lights.addLight(fountainX, fountainY, 100, 0x3b82f6, 0.6);
     this.tweens.add({
-      targets: fountainGlow,
-      alpha: 0.7,
-      scale: 1.8,
+      targets: fountainLight,
+      intensity: 0.9,
+      radius: 120,
       duration: 1200,
       yoyo: true,
       repeat: -1,
@@ -333,17 +334,14 @@ export class ShopScene extends Phaser.Scene {
     this.rerollCrystal = this.physics.add.sprite(crystalX, crystalY, 'reroll_crystal');
     this.rerollCrystal.setImmovable(true);
     this.rerollCrystal.setDepth(5);
+    this.rerollCrystal.setPipeline('Light2D');
 
-    // Crystal glow
-    const crystalGlow = this.add.sprite(crystalX, crystalY, 'weapon_drop_glow');
-    crystalGlow.setDepth(4);
-    crystalGlow.setTint(0x8b5cf6);
-    crystalGlow.setAlpha(0.4);
-    crystalGlow.setScale(1.3);
+    // Crystal glow - real point light
+    const crystalLight = this.lights.addLight(crystalX, crystalY, 80, 0x8b5cf6, 0.6);
     this.tweens.add({
-      targets: crystalGlow,
-      alpha: 0.7,
-      scale: 1.6,
+      targets: crystalLight,
+      intensity: 0.9,
+      radius: 100,
       duration: 800,
       yoyo: true,
       repeat: -1,
@@ -371,17 +369,14 @@ export class ShopScene extends Phaser.Scene {
     this.exitPortal = this.physics.add.sprite(portalX, portalY, 'exit_portal');
     this.exitPortal.setImmovable(true);
     this.exitPortal.setDepth(5);
+    this.exitPortal.setPipeline('Light2D');
 
-    // Portal glow
-    const portalGlow = this.add.sprite(portalX, portalY, 'weapon_drop_glow');
-    portalGlow.setDepth(4);
-    portalGlow.setTint(0x10b981);
-    portalGlow.setAlpha(0.5);
-    portalGlow.setScale(1.5);
+    // Portal glow - real point light
+    const portalLight = this.lights.addLight(portalX, portalY, 100, 0x10b981, 0.7);
     this.tweens.add({
-      targets: portalGlow,
-      alpha: 0.8,
-      scale: 2,
+      targets: portalLight,
+      intensity: 1.0,
+      radius: 130,
       duration: 1000,
       yoyo: true,
       repeat: -1,

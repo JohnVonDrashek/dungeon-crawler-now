@@ -52,8 +52,12 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
   // Speed modifier for slowing effects (1.0 = normal)
   private speedModifier: number = 1.0;
 
+  // Animation tracking
+  private facingDirection: string = 'south';
+  private isMoving: boolean = false;
+
   constructor(scene: Phaser.Scene, x: number, y: number) {
-    super(scene, x, y, 'player');
+    super(scene, x, y, 'franciscan_idle', 0); // Start with idle south
 
     scene.add.existing(this);
     scene.physics.add.existing(this);
@@ -62,6 +66,9 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     this.setCollideWorldBounds(true);
     this.setDepth(10);
+
+    // Enable Light2D pipeline for dynamic lighting
+    this.setPipeline('Light2D');
 
     if (scene.input.keyboard) {
       this.cursors = scene.input.keyboard.createCursorKeys();
@@ -115,6 +122,49 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
 
     const effectiveSpeed = this.speed * this.speedModifier;
     this.setVelocity(velocityX * effectiveSpeed, velocityY * effectiveSpeed);
+
+    // Update animation based on movement
+    this.updateAnimation(velocityX, velocityY);
+  }
+
+  private updateAnimation(vx: number, vy: number): void {
+    this.isMoving = vx !== 0 || vy !== 0;
+
+    // Determine facing direction from velocity
+    if (this.isMoving) {
+      this.facingDirection = this.getDirectionFromVelocity(vx, vy);
+    }
+
+    // Play appropriate animation
+    const animKey = this.isMoving
+      ? `player_walk_${this.facingDirection}`
+      : `player_idle_${this.facingDirection}`;
+
+    // Only change animation if state changed or direction changed
+    if (this.anims.currentAnim?.key !== animKey) {
+      this.play(animKey, true);
+    }
+  }
+
+  private getDirectionFromVelocity(vx: number, vy: number): string {
+    // 8-direction mapping based on velocity
+    // vx: -1 = left, 1 = right
+    // vy: -1 = up, 1 = down
+
+    if (vx === 0 && vy > 0) return 'south';
+    if (vx === 0 && vy < 0) return 'north';
+    if (vx > 0 && vy === 0) return 'east';
+    if (vx < 0 && vy === 0) return 'west';
+    if (vx > 0 && vy > 0) return 'south_east';
+    if (vx < 0 && vy > 0) return 'south_west';
+    if (vx > 0 && vy < 0) return 'north_east';
+    if (vx < 0 && vy < 0) return 'north_west';
+
+    return this.facingDirection; // Keep current if no movement
+  }
+
+  getFacingDirection(): string {
+    return this.facingDirection;
   }
 
   private updateCooldowns(delta: number): void {
