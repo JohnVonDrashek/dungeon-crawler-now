@@ -1,4 +1,3 @@
-import Phaser from 'phaser';
 import { Player } from '../entities/Player';
 import { Enemy } from '../entities/Enemy';
 import { BossEnemy } from '../entities/enemies/EnemyTypes';
@@ -6,13 +5,10 @@ import { TILE_SIZE, DUNGEON_WIDTH, DUNGEON_HEIGHT } from '../utils/constants';
 import { DungeonGenerator, DungeonData, Room, RoomType } from '../systems/DungeonGenerator';
 import { CombatSystem } from '../systems/CombatSystem';
 import { LootSystem } from '../systems/LootSystem';
-import { AudioSystem } from '../systems/AudioSystem';
 import { SaveSystem } from '../systems/SaveSystem';
 import { ItemRarity } from '../systems/Item';
-import { InventoryUI } from '../ui/InventoryUI';
 import { MinimapUI } from '../ui/MinimapUI';
 import { LevelUpUI } from '../ui/LevelUpUI';
-import { SettingsUI } from '../ui/SettingsUI';
 import { RoomManager } from '../systems/RoomManager';
 import { HazardSystem } from '../systems/HazardSystem';
 import { Weapon } from '../systems/Weapon';
@@ -22,13 +18,24 @@ import { PlayerAttackManager } from '../systems/PlayerAttackManager';
 import { EnemySpawnManager } from '../systems/EnemySpawnManager';
 import { progressionManager } from '../systems/ProgressionSystem';
 import { SinWorld, getWorldConfig } from '../config/WorldConfig';
-import { DialogueUI } from '../ui/DialogueUI';
 import { NPC, createLostSoulData, createWarningSpirit } from '../entities/NPC';
 import { hasWangTileset, getWangMapping, getWangTileFrame, getSimpleCornerValues } from '../systems/WangTileSystem';
+import { BaseScene } from './BaseScene';
+import { AudioSystem } from '../systems/AudioSystem';
 import { LightingSystem } from '../systems/LightingSystem';
+import { InventoryUI } from '../ui/InventoryUI';
+import { SettingsUI } from '../ui/SettingsUI';
+import { DialogueUI } from '../ui/DialogueUI';
 
-export class GameScene extends Phaser.Scene {
-  private player!: Player;
+export class GameScene extends BaseScene {
+  // Type narrowing for inherited properties (guaranteed non-null in this scene)
+  declare protected player: Player;
+  declare protected audioSystem: AudioSystem;
+  declare protected lightingSystem: LightingSystem;
+  declare protected inventoryUI: InventoryUI;
+  declare protected settingsUI: SettingsUI;
+  declare protected dialogueUI: DialogueUI;
+
   private dungeon!: DungeonData;
   private dungeonGenerator!: DungeonGenerator;
   private wallLayer!: Phaser.GameObjects.Group;
@@ -44,19 +51,14 @@ export class GameScene extends Phaser.Scene {
   }
   private combatSystem!: CombatSystem;
   private lootSystem!: LootSystem;
-  private audioSystem!: AudioSystem;
-  private inventoryUI!: InventoryUI;
   private minimapUI!: MinimapUI;
   private levelUpUI!: LevelUpUI;
-  private settingsUI!: SettingsUI;
   private roomManager!: RoomManager;
   private hazardSystem!: HazardSystem;
   private loreSystem!: LoreSystem;
   private loreObjects!: Phaser.Physics.Arcade.Group;
-  private lightingSystem!: LightingSystem;
   private activeLoreModal: Phaser.GameObjects.Container | null = null;
   private lorePrompt!: Phaser.GameObjects.Text;
-  private dialogueUI!: DialogueUI;
   private dungeonNPCs: NPC[] = [];
   private nearbyNPC: NPC | null = null;
   private floor: number = 1;
@@ -72,7 +74,7 @@ export class GameScene extends Phaser.Scene {
     super({ key: 'GameScene' });
   }
 
-  create(): void {
+  createScene(): void {
     this.floor = this.registry.get('floor') || 1;
     this.currentWorld = this.registry.get('currentWorld') || null;
     this.canExit = true;
@@ -93,10 +95,7 @@ export class GameScene extends Phaser.Scene {
 
     this.combatSystem = new CombatSystem(this);
     this.lootSystem = new LootSystem(0.5);
-    this.audioSystem = new AudioSystem(this);
-
-    // Start exploration music
-    this.audioSystem.startMusic('exploration');
+    this.initAudio('exploration');
 
     this.dungeonGenerator = new DungeonGenerator(DUNGEON_WIDTH, DUNGEON_HEIGHT);
     this.dungeon = this.dungeonGenerator.generate();
@@ -105,20 +104,9 @@ export class GameScene extends Phaser.Scene {
 
     this.createDungeonTiles();
 
-    // Initialize lighting system
-    this.lightingSystem = new LightingSystem(this);
-    this.lightingSystem.enable();
-
-    // Set world-specific lighting colors (affects torch colors, rim lights, ambient)
-    this.lightingSystem.setWorld(this.currentWorld);
-
-    // Create subtle rim lights along wall edges - separates walls from floor visually
-    this.lightingSystem.createWallRimLights(this.dungeon.tiles, TILE_SIZE);
-
-    // Create subtle drifting shadow overlay for ambient darkness variation
-    const dungeonWidth = this.dungeon.tiles[0].length * TILE_SIZE;
-    const dungeonHeight = this.dungeon.tiles.length * TILE_SIZE;
-    this.lightingSystem.createShadowOverlay(dungeonWidth, dungeonHeight);
+    // Initialize lighting system with world-specific colors and effects
+    this.initLighting(this.currentWorld);
+    this.initLightingEffects(this.dungeon.tiles, TILE_SIZE);
 
     const spawnX = this.dungeon.spawnPoint.x * TILE_SIZE + TILE_SIZE / 2;
     const spawnY = this.dungeon.spawnPoint.y * TILE_SIZE + TILE_SIZE / 2;
