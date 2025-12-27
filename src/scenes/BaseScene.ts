@@ -75,4 +75,55 @@ export abstract class BaseScene extends Phaser.Scene {
     const offsetY = (this.scale.height - roomHeight) / 2;
     this.cameras.main.setScroll(-offsetX, -offsetY);
   }
+
+  /** Initialize common UI components (requires player to exist) */
+  protected initCommonUI(): void {
+    if (!this.player) {
+      console.warn('BaseScene.initCommonUI: called before player exists');
+      return;
+    }
+    this.inventoryUI = new InventoryUI(this, this.player);
+    this.settingsUI = new SettingsUI(this);
+    this.dialogueUI = new DialogueUI(this);
+  }
+
+  /** Set up standard keyboard shortcuts (E=inventory, ESC=close/settings) */
+  protected initCommonKeys(): void {
+    if (!this.input.keyboard) return;
+
+    // E - Toggle inventory
+    this.input.keyboard.on('keydown-E', () => {
+      if (this.canToggleUI()) {
+        this.inventoryUI?.toggle();
+        if (this.inventoryUI?.getIsVisible()) {
+          this.player?.setVelocity(0, 0);
+        }
+      }
+    });
+
+    // ESC - Close any open UI, or open settings if nothing open
+    this.input.keyboard.on('keydown-ESC', () => {
+      if (this.inventoryUI?.getIsVisible()) {
+        this.inventoryUI.hide();
+      } else if (this.dialogueUI?.getIsVisible?.()) {
+        // Don't interrupt dialogue with ESC
+      } else {
+        this.settingsUI?.toggle();
+      }
+    });
+  }
+
+  /** Override in child scenes to block UI during cutscenes, shops, etc. */
+  protected canToggleUI(): boolean {
+    return true;
+  }
+
+  /** Check if any modal UI is currently blocking gameplay */
+  protected isUIBlocking(): boolean {
+    return (
+      (this.inventoryUI?.getIsVisible() ?? false) ||
+      (this.settingsUI?.getIsVisible?.() ?? false) ||
+      (this.dialogueUI?.getIsVisible?.() ?? false)
+    );
+  }
 }
