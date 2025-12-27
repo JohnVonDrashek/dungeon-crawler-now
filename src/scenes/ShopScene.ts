@@ -1,9 +1,9 @@
 import Phaser from 'phaser';
+import { BaseScene } from './BaseScene';
 import { TILE_SIZE } from '../utils/constants';
 import { Player } from '../entities/Player';
 import { ShopUI } from '../ui/ShopUI';
 import { InventoryUI } from '../ui/InventoryUI';
-import { AudioSystem } from '../systems/AudioSystem';
 import { SinWorld } from '../config/WorldConfig';
 import { progressionManager } from '../systems/ProgressionSystem';
 
@@ -14,13 +14,12 @@ interface ShopData {
   inventorySerialized: string;
 }
 
-export class ShopScene extends Phaser.Scene {
-  private player!: Player;
+export class ShopScene extends BaseScene {
+  protected declare player: Player;
   private floor: number = 1;
   private currentWorld: SinWorld | null = null;
   private shopUI!: ShopUI;
-  private inventoryUI!: InventoryUI;
-  private audioSystem!: AudioSystem;
+  protected declare inventoryUI: InventoryUI;
 
   // Room dimensions
   private readonly ROOM_WIDTH = 15;
@@ -49,7 +48,7 @@ export class ShopScene extends Phaser.Scene {
     super({ key: 'ShopScene' });
   }
 
-  create(): void {
+  createScene(): void {
     // Get data from registry
     const shopData = this.registry.get('shopData') as ShopData | undefined;
     if (shopData) {
@@ -60,10 +59,8 @@ export class ShopScene extends Phaser.Scene {
       this.currentWorld = this.registry.get('currentWorld') || null;
     }
 
-    this.audioSystem = new AudioSystem(this);
-
-    // Start peaceful shrine music
-    this.audioSystem.startMusic('shrine');
+    // Initialize audio and start peaceful shrine music
+    this.initAudio('shrine');
 
     // Create the room
     this.createRoom();
@@ -85,11 +82,7 @@ export class ShopScene extends Phaser.Scene {
     }
 
     // Set up camera - center the small room on screen (no scrolling needed)
-    const roomWidth = this.ROOM_WIDTH * TILE_SIZE;
-    const roomHeight = this.ROOM_HEIGHT * TILE_SIZE;
-    const offsetX = (this.scale.width - roomWidth) / 2;
-    const offsetY = (this.scale.height - roomHeight) / 2;
-    this.cameras.main.setScroll(-offsetX, -offsetY);
+    this.centerCamera(this.ROOM_WIDTH * TILE_SIZE, this.ROOM_HEIGHT * TILE_SIZE);
 
     // Create interactables
     this.createInteractables();
@@ -507,7 +500,7 @@ export class ShopScene extends Phaser.Scene {
 
     this.shopOpen = true;
     this.player.setVelocity(0, 0);
-    this.audioSystem.play('sfx_pickup', 0.3);
+    this.audioSystem?.play('sfx_pickup', 0.3);
 
     this.shopUI.show(() => {
       this.shopOpen = false;
@@ -530,7 +523,7 @@ export class ShopScene extends Phaser.Scene {
     const healed = this.player.maxHp - this.player.hp;
     this.player.hp = this.player.maxHp;
 
-    this.audioSystem.play('sfx_levelup', 0.4);
+    this.audioSystem?.play('sfx_levelup', 0.4);
 
     // Particles
     for (let i = 0; i < 8; i++) {
@@ -567,7 +560,7 @@ export class ShopScene extends Phaser.Scene {
     this.rerollCount++;
     this.rerollCost = 50 + this.rerollCount * 25;
 
-    this.audioSystem.play('sfx_pickup', 0.5);
+    this.audioSystem?.play('sfx_pickup', 0.5);
 
     // Regenerate shop inventory
     this.shopUI.rerollInventory();
@@ -640,7 +633,7 @@ export class ShopScene extends Phaser.Scene {
       inventorySerialized: this.player.inventory.serialize(),
     });
 
-    this.audioSystem.play('sfx_stairs', 0.5);
+    this.audioSystem?.play('sfx_stairs', 0.5);
 
     // Transition effect
     this.cameras.main.flash(300, 100, 255, 100);
