@@ -11,7 +11,8 @@
   },
   "dependencies": {
     "phaser": "^3.80.1",
-    "phaser3-rex-plugins": "^1.80.17"
+    "phaser3-rex-plugins": "^1.80.17",
+    "trystero": "^0.22.0"
   },
   "devDependencies": {
     "sharp": "^0.34.5",
