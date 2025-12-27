@@ -4,6 +4,8 @@ import { Enemy } from '../entities/Enemy';
 import { AudioSystem } from './AudioSystem';
 import { Weapon, WeaponType } from './Weapon';
 import { TILE_SIZE } from '../utils/constants';
+import { networkManager } from '../multiplayer/NetworkManager';
+import { MessageType, PlayerHitMessage } from '../multiplayer/SyncMessages';
 
 export class PlayerAttackManager {
   private scene: Phaser.Scene;
@@ -136,6 +138,7 @@ export class PlayerAttackManager {
           const damage = this.player.getAttackDamage();
           enemy.takeDamage(damage);
           this.scene.events.emit('showDamageNumber', enemy.x, enemy.y, damage, false);
+          this.broadcastHit(enemy, damage);
 
           // Knockback
           const knockbackForce = 150;
@@ -260,6 +263,7 @@ export class PlayerAttackManager {
           const damage = this.player.getAttackDamage();
           enemy.takeDamage(damage);
           this.scene.events.emit('showDamageNumber', enemy.x, enemy.y, damage, false);
+          this.broadcastHit(enemy, damage);
         }
       });
     });
@@ -298,6 +302,7 @@ export class PlayerAttackManager {
         if (dist <= radius) {
           enemy.takeDamage(damage);
           this.scene.events.emit('showDamageNumber', enemy.x, enemy.y, damage, false);
+          this.broadcastHit(enemy, damage);
         }
       });
     });
@@ -324,6 +329,7 @@ export class PlayerAttackManager {
     enemy.takeDamage(damage);
     this.audioSystem.play('sfx_hit', 0.3);
     this.scene.events.emit('showDamageNumber', enemy.x, enemy.y, damage, false);
+    this.broadcastHit(enemy, damage);
 
     // Handle AoE explosion
     const isAoe = projectile.getData('aoe');
@@ -351,5 +357,17 @@ export class PlayerAttackManager {
     }
 
     projectile.destroy();
+  }
+
+  // Broadcast hit to network for multiplayer sync
+  private broadcastHit(enemy: Enemy, damage: number): void {
+    if (networkManager.isMultiplayer) {
+      const hitMessage: PlayerHitMessage = {
+        type: MessageType.PLAYER_HIT,
+        enemyId: (enemy as Enemy & { networkId?: string }).networkId || 'unknown',
+        damage: damage,
+      };
+      networkManager.broadcast(hitMessage);
+    }
   }
 }
