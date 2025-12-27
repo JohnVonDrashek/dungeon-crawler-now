@@ -57,4 +57,22 @@ export abstract class BaseScene extends Phaser.Scene {
     const height = tiles.length * tileSize;
     this.lightingSystem.createShadowOverlay(width, height);
   }
+
+  /** Create player and optionally restore from save data */
+  protected initPlayer(x: number, y: number, restoreFrom?: BaseSceneSaveData): Player {
+    this.player = new Player(this, x, y);
+    if (restoreFrom) {
+      this.player.restoreFromSave(restoreFrom.player);
+      this.player.inventory.deserialize(restoreFrom.inventory);
+      this.player.recalculateStats();
+    }
+    return this.player;
+  }
+
+  /** Center camera on a fixed-size room (for rooms smaller than viewport) */
+  protected centerCamera(roomWidth: number, roomHeight: number): void {
+    const offsetX = (this.scale.width - roomWidth) / 2;
+    const offsetY = (this.scale.height - roomHeight) / 2;
+    this.cameras.main.setScroll(-offsetX, -offsetY);
+  }
 }
