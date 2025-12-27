@@ -2,20 +2,15 @@
  * HubScene - Central hub world with portals to all 7 sin worlds
  */
 
-import Phaser from 'phaser';
+import { BaseScene } from './BaseScene';
 import { Player } from '../entities/Player';
 import { TILE_SIZE } from '../utils/constants';
-import { AudioSystem } from '../systems/AudioSystem';
 import { SaveSystem } from '../systems/SaveSystem';
 import { SinWorld, getAllWorlds, getWorldConfig } from '../config/WorldConfig';
 import { getSimpleCornerValues, getWangTileFrame, getWangMapping } from '../systems/WangTileSystem';
 import { progressionManager } from '../systems/ProgressionSystem';
-import { InventoryUI } from '../ui/InventoryUI';
 import { ShopUI } from '../ui/ShopUI';
-import { SettingsUI } from '../ui/SettingsUI';
-import { DialogueUI } from '../ui/DialogueUI';
 import { NPC, HUB_NPCS } from '../entities/NPC';
-import { LightingSystem } from '../systems/LightingSystem';
 
 interface PortalData {
   world: SinWorld;
@@ -25,21 +20,23 @@ interface PortalData {
   checkmark?: Phaser.GameObjects.Text;
 }
 
-export class HubScene extends Phaser.Scene {
-  private player!: Player;
-  private audioSystem!: AudioSystem;
-  private inventoryUI!: InventoryUI;
+export class HubScene extends BaseScene {
+  // Override base class protected properties with definite assignment (HubScene always has these)
+  protected declare player: Player;
+  protected declare audioSystem: import('../systems/AudioSystem').AudioSystem;
+  protected declare lightingSystem: import('../systems/LightingSystem').LightingSystem;
+  protected declare inventoryUI: import('../ui/InventoryUI').InventoryUI;
+  protected declare settingsUI: import('../ui/SettingsUI').SettingsUI;
+  protected declare dialogueUI: import('../ui/DialogueUI').DialogueUI;
+
   private shopUI!: ShopUI;
-  private settingsUI!: SettingsUI;
   private portals: PortalData[] = [];
   private fountain!: Phaser.GameObjects.Sprite;
   private shopNPC!: Phaser.GameObjects.Sprite;
   private interactPrompt!: Phaser.GameObjects.Container;
   private nearbyInteractable: 'fountain' | 'shop' | 'victory' | 'chronicler' | 'mysterious' | SinWorld | null = null;
   private victoryPortal: { sprite: Phaser.GameObjects.Sprite; glow: Phaser.GameObjects.Arc } | null = null;
-  private dialogueUI!: DialogueUI;
   private hubNPCs: NPC[] = [];
-  private lightingSystem!: LightingSystem;
 
   // Hub dimensions (in tiles)
   private readonly HUB_WIDTH = 25;
@@ -49,9 +46,8 @@ export class HubScene extends Phaser.Scene {
     super({ key: 'HubScene' });
   }
 
-  create(): void {
-    this.audioSystem = new AudioSystem(this);
-    this.audioSystem.startMusic('shrine');
+  createScene(): void {
+    this.initAudio('shrine');
 
     // Load saved progression
     const savedData = SaveSystem.load();
@@ -60,22 +56,13 @@ export class HubScene extends Phaser.Scene {
     }
 
     // Initialize lighting system with hub-specific lighting palette
-    this.lightingSystem = new LightingSystem(this);
-    this.lightingSystem.enable();
-    this.lightingSystem.setWorld('hub');
+    this.initLighting('hub');
 
     // Create the hub room
     this.createRoom();
 
-    // Add wall rim lights for depth (separates walls from floor)
-    const hubTiles = this.buildHubTiles();
-    this.lightingSystem.createWallRimLights(hubTiles, TILE_SIZE);
-
-    // Add subtle shadow overlay for ambient darkness variation
-    this.lightingSystem.createShadowOverlay(
-      this.HUB_WIDTH * TILE_SIZE,
-      this.HUB_HEIGHT * TILE_SIZE
-    );
+    // Add wall rim lights and shadow overlay
+    this.initLightingEffects(this.buildHubTiles(), TILE_SIZE);
 
     // Create portals for each world
     this.createPortals();
@@ -107,21 +94,15 @@ export class HubScene extends Phaser.Scene {
     }
 
     // Set up camera
-    const roomWidth = this.HUB_WIDTH * TILE_SIZE;
-    const roomHeight = this.HUB_HEIGHT * TILE_SIZE;
-    const offsetX = (this.scale.width - roomWidth) / 2;
-    const offsetY = (this.scale.height - roomHeight) / 2;
-    this.cameras.main.setScroll(-offsetX, -offsetY);
+    this.centerCamera(this.HUB_WIDTH * TILE_SIZE, this.HUB_HEIGHT * TILE_SIZE);
 
     // Create UI elements
     this.createUI();
     this.createInteractPrompt();
 
-    // Create inventory and shop UI
-    this.inventoryUI = new InventoryUI(this, this.player);
-    this.shopUI = new ShopUI(this, this.player, 1);
-    this.settingsUI = new SettingsUI(this);
-    this.dialogueUI = new DialogueUI(this);
+    // Create common UI (inventory, settings, dialogue) and shop UI
+    this.initCommonUI();
+    this.shopUI = new ShopUI(this, this.player!, 1);
 
     // Create Hub NPCs
     this.createHubNPCs();
