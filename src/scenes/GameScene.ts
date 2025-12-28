@@ -9,6 +9,7 @@ import { SaveSystem } from '../systems/SaveSystem';
 import { ItemRarity } from '../systems/Item';
 import { MinimapUI } from '../ui/MinimapUI';
 import { LevelUpUI } from '../ui/LevelUpUI';
+import { DebugMenuUI } from '../ui/DebugMenuUI';
 import { RoomManager } from '../systems/RoomManager';
 import { HazardSystem } from '../systems/HazardSystem';
 import { Weapon } from '../systems/Weapon';
@@ -69,6 +70,7 @@ export class GameScene extends BaseScene {
   private lorePrompt!: Phaser.GameObjects.Text;
   private dungeonNPCs: NPC[] = [];
   private nearbyNPC: NPC | null = null;
+  private debugMenuUI!: DebugMenuUI;
   private floor: number = 1;
   private currentWorld: SinWorld | null = null;
   private canExit: boolean = true;
@@ -178,6 +180,20 @@ export class GameScene extends BaseScene {
     this.lootDropManager = new LootDropManager(this, this.player, this.audioSystem);
     this.lootDropManager.create();
 
+    // Create debug menu UI
+    this.debugMenuUI = new DebugMenuUI(
+      this, this.player, this.lootSystem, this.lootDropManager,
+      {
+        getEnemies: () => this.enemies,
+        handleExitCollision: () => this.handleExitCollision(),
+        closeAndReturnToHub: () => {
+          this.registry.remove('currentWorld');
+          this.scene.start('HubScene');
+        },
+      }
+    );
+    this.debugMenuUI.setFloorInfo(this.floor, this.currentWorld);
+
     // Create room manager for door/room mechanics
     this.roomManager = new RoomManager(this, this.dungeon);
 
@@ -250,7 +266,7 @@ export class GameScene extends BaseScene {
 
   update(time: number, delta: number): void {
     if (this.inventoryUI.getIsVisible() || this.levelUpUI.getIsVisible() || this.settingsUI.getIsVisible()) return;
-    if (this.debugMenuVisible) return;
+    if (this.debugMenuUI.getIsVisible()) return;
 
     // Multiplayer sync
     this.playerSync?.update();
@@ -1227,7 +1243,7 @@ export class GameScene extends BaseScene {
     const player = playerObj as unknown as Player;
     const enemy = enemyObj as unknown as Enemy;
 
-    if (player.getIsInvulnerable() || this.devMode) return;
+    if (player.getIsInvulnerable() || this.debugMenuUI.getIsDevMode()) return;
 
     const result = this.combatSystem.calculateDamage(enemy, player);
     this.combatSystem.applyDamage(player, result);
@@ -1243,7 +1259,7 @@ export class GameScene extends BaseScene {
     const player = playerObj as unknown as Player;
     const projectile = projectileObj as Phaser.Physics.Arcade.Sprite;
 
-    if (player.getIsInvulnerable() || this.devMode) {
+    if (player.getIsInvulnerable() || this.debugMenuUI.getIsDevMode()) {
       projectile.destroy();
       return;
     }
@@ -1573,7 +1589,7 @@ export class GameScene extends BaseScene {
     });
 
     this.events.on('enemyAttack', (enemy: Enemy, target: Player) => {
-      if (!target.getIsInvulnerable() && !this.devMode) {
+      if (!target.getIsInvulnerable() && !this.debugMenuUI.getIsDevMode()) {
         const result = this.combatSystem.calculateDamage(enemy, target);
         this.combatSystem.applyDamage(target, result);
         this.audioSystem.play('sfx_hurt', 0.4);
@@ -1584,7 +1600,7 @@ export class GameScene extends BaseScene {
 
     // Hazard damage event
     this.events.on('hazardDamage', (damage: number, _source: string) => {
-      if (!this.devMode) {
+      if (!this.debugMenuUI.getIsDevMode()) {
         this.audioSystem.play('sfx_hurt', 0.3);
         this.visualEffects.shakeCamera(3, 80);
         this.visualEffects.showDamageNumber(this.player.x, this.player.y, damage, true);
@@ -1701,263 +1717,7 @@ export class GameScene extends BaseScene {
     });
 
     // Dev/Debug controls
-    this.setupDevControls();
-  }
-
-  private devMode: boolean = false;
-  private debugMenu: Phaser.GameObjects.Container | null = null;
-  private debugMenuVisible: boolean = false;
-
-  private setupDevControls(): void {
-    if (!this.input.keyboard) return;
-
-    // F1: Toggle debug menu
-    this.input.keyboard.on('keydown-F1', () => {
-      this.toggleDebugMenu();
-    });
-  }
-
-  private getDebugOptions(): { label: string; action: () => void }[] {
-    return [
-      {
-        label: `[1] God Mode: ${this.devMode ? 'ON' : 'OFF'}`,
-        action: () => {
-          this.devMode = !this.devMode;
-          if (this.devMode) this.player.hp = this.player.maxHp;
-          this.showDevMessage(`God Mode: ${this.devMode ? 'ON' : 'OFF'}`);
-          this.refreshDebugMenu();
-        },
-      },
-      {
-        label: '[2] Full Heal',
-        action: () => {
-          this.player.hp = this.player.maxHp;
-          this.showDevMessage('Fully healed!');
-        },
-      },
-      {
-        label: '[3] Level Up x1',
-        action: () => {
-          this.player.gainXP(this.player.xpToNextLevel);
-          this.showDevMessage('Level Up!');
-        },
-      },
-      {
-        label: '[4] Level Up x5',
-        action: () => {
-          for (let i = 0; i < 5; i++) this.player.gainXP(this.player.xpToNextLevel);
-          this.showDevMessage('Level Up x5!');
-        },
-      },
-      {
-        label: '[5] Add 500 Gold',
-        action: () => {
-          this.player.gold += 500;
-          this.showDevMessage('+500 Gold');
-        },
-      },
-      {
-        label: '[6] Spawn Epic Loot',
-        action: () => {
-          const loot = this.lootSystem.generateGuaranteedLoot(ItemRarity.EPIC);
-          this.lootDropManager.spawnItemDrop(this.player.x + 30, this.player.y, loot);
-          this.showDevMessage('Spawned Epic Loot');
-        },
-      },
-      {
-        label: '[7] Spawn Rare Loot',
-        action: () => {
-          const loot = this.lootSystem.generateGuaranteedLoot(ItemRarity.RARE);
-          this.lootDropManager.spawnItemDrop(this.player.x + 30, this.player.y, loot);
-          this.showDevMessage('Spawned Rare Loot');
-        },
-      },
-      {
-        label: '[8] Kill All Enemies',
-        action: () => {
-          let count = 0;
-          this.enemies.getChildren().forEach((child) => {
-            const enemy = child as unknown as Enemy;
-            if (enemy.active) {
-              enemy.takeDamage(9999);
-              count++;
-            }
-          });
-          this.showDevMessage(`Killed ${count} enemies`);
-        },
-      },
-      {
-        label: '[9] Skip to Next Floor',
-        action: () => {
-          this.showDevMessage(`Skipping to floor ${this.floor + 1}`);
-          this.closeDebugMenu();
-          this.handleExitCollision();
-        },
-      },
-      {
-        label: '[0] Jump to Boss Floor',
-        action: () => {
-          if (this.currentWorld) {
-            this.floor = 2;
-            this.registry.set('floor', 2);
-            const worldConfig = getWorldConfig(this.currentWorld);
-            this.showDevMessage(`Jumping to ${worldConfig.name} BOSS`);
-          } else {
-            this.floor = this.FINAL_FLOOR - 1;
-            this.registry.set('floor', this.floor);
-            this.showDevMessage('Jumping to FINAL BOSS');
-          }
-          this.closeDebugMenu();
-          this.handleExitCollision();
-        },
-      },
-      {
-        label: '[C] Complete Current World',
-        action: () => {
-          if (this.currentWorld) {
-            progressionManager.completeWorld(this.currentWorld);
-            this.showDevMessage(`Completed ${getWorldConfig(this.currentWorld).name}`);
-          } else {
-            this.showDevMessage('Not in world mode');
-          }
-        },
-      },
-      {
-        label: '[A] Complete All Worlds',
-        action: () => {
-          const allWorlds = [
-            SinWorld.PRIDE, SinWorld.GREED, SinWorld.WRATH,
-            SinWorld.SLOTH, SinWorld.ENVY, SinWorld.GLUTTONY, SinWorld.LUST
-          ];
-          allWorlds.forEach(w => progressionManager.completeWorld(w));
-          this.showDevMessage('All 7 worlds completed!');
-        },
-      },
-      {
-        label: '[H] Return to Hub',
-        action: () => {
-          this.closeDebugMenu();
-          this.registry.remove('currentWorld');
-          this.scene.start('HubScene');
-        },
-      },
-    ];
-  }
-
-  private toggleDebugMenu(): void {
-    if (this.debugMenuVisible) {
-      this.closeDebugMenu();
-    } else {
-      this.openDebugMenu();
-    }
-  }
-
-  private openDebugMenu(): void {
-    if (this.debugMenu) this.debugMenu.destroy();
-
-    this.debugMenuVisible = true;
-    this.debugMenu = this.add.container(0, 0);
-    this.debugMenu.setScrollFactor(0);
-    this.debugMenu.setDepth(500);
-
-    // Background
-    const bg = this.add.rectangle(
-      this.cameras.main.width / 2,
-      this.cameras.main.height / 2,
-      320, 400, 0x000000, 0.9
-    );
-    bg.setStrokeStyle(2, 0xfbbf24);
-    this.debugMenu.add(bg);
-
-    // Title
-    const title = this.add.text(
-      this.cameras.main.width / 2,
-      this.cameras.main.height / 2 - 175,
-      '== DEBUG MENU ==',
-      { fontSize: '18px', fontFamily: 'monospace', color: '#fbbf24' }
-    );
-    title.setOrigin(0.5);
-    this.debugMenu.add(title);
-
-    // Hint
-    const hint = this.add.text(
-      this.cameras.main.width / 2,
-      this.cameras.main.height / 2 + 185,
-      'Press key or click | F1/ESC to close',
-      { fontSize: '10px', fontFamily: 'monospace', color: '#6b7280' }
-    );
-    hint.setOrigin(0.5);
-    this.debugMenu.add(hint);
-
-    // Options
-    const options = this.getDebugOptions();
-    const startY = this.cameras.main.height / 2 - 140;
-
-    options.forEach((opt, i) => {
-      const y = startY + i * 24;
-      const text = this.add.text(
-        this.cameras.main.width / 2 - 140,
-        y,
-        opt.label,
-        { fontSize: '13px', fontFamily: 'monospace', color: '#e5e7eb' }
-      );
-      text.setInteractive({ useHandCursor: true });
-      text.on('pointerover', () => text.setColor('#fbbf24'));
-      text.on('pointerout', () => text.setColor('#e5e7eb'));
-      text.on('pointerdown', () => {
-        opt.action();
-      });
-      this.debugMenu!.add(text);
-    });
-
-    // Setup keyboard shortcuts for debug menu
-    this.setupDebugMenuKeys();
-  }
-
-  private setupDebugMenuKeys(): void {
-    if (!this.input.keyboard) return;
-
-    const keyHandler = (event: KeyboardEvent) => {
-      if (!this.debugMenuVisible) return;
-
-      const options = this.getDebugOptions();
-      const key = event.key.toUpperCase();
-
-      // Number keys 1-9, 0
-      if (key >= '1' && key <= '9') {
-        const idx = parseInt(key) - 1;
-        if (idx < options.length) options[idx].action();
-      } else if (key === '0') {
-        if (options.length > 9) options[9].action();
-      } else if (key === 'C') {
-        options.find(o => o.label.includes('[C]'))?.action();
-      } else if (key === 'A') {
-        options.find(o => o.label.includes('[A]'))?.action();
-      } else if (key === 'H') {
-        options.find(o => o.label.includes('[H]'))?.action();
-      } else if (key === 'ESCAPE') {
-        this.closeDebugMenu();
-      }
-    };
-
-    this.input.keyboard.on('keydown', keyHandler);
-    this.debugMenu?.once('destroy', () => {
-      this.input.keyboard?.off('keydown', keyHandler);
-    });
-  }
-
-  private refreshDebugMenu(): void {
-    if (this.debugMenuVisible) {
-      this.openDebugMenu();
-    }
-  }
-
-  private closeDebugMenu(): void {
-    this.debugMenuVisible = false;
-    if (this.debugMenu) {
-      this.debugMenu.destroy();
-      this.debugMenu = null;
-    }
+    this.debugMenuUI.setupControls();
   }
 
   private hasBossAlive(): boolean {
@@ -1965,26 +1725,6 @@ export class GameScene extends BaseScene {
       const enemy = child as unknown as Enemy;
       // Check for BossEnemy or sin bosses (all bosses have scale >= 2)
       return enemy.active && (enemy instanceof BossEnemy || enemy.scale >= 2);
-    });
-  }
-
-  private showDevMessage(msg: string): void {
-    const text = this.add.text(10, 10, `[DEV] ${msg}`, {
-      fontSize: '14px',
-      color: '#fbbf24',
-      backgroundColor: '#000000',
-      padding: { x: 5, y: 3 },
-    });
-    text.setScrollFactor(0);
-    text.setDepth(300);
-
-    this.tweens.add({
-      targets: text,
-      alpha: 0,
-      y: -20,
-      duration: 1500,
-      delay: 500,
-      onComplete: () => text.destroy(),
     });
   }
 
