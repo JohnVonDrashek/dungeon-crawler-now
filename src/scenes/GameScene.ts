@@ -18,6 +18,7 @@ import { LootDropManager } from '../systems/LootDropManager';
 import { PlayerAttackManager } from '../systems/PlayerAttackManager';
 import { EnemySpawnManager } from '../systems/EnemySpawnManager';
 import { VisualEffectsManager } from '../systems/VisualEffectsManager';
+import { RoomDecorationManager } from '../systems/RoomDecorationManager';
 import { progressionManager } from '../systems/ProgressionSystem';
 import { SinWorld, getWorldConfig } from '../config/WorldConfig';
 import { NPC, createLostSoulData, createWarningSpirit } from '../entities/NPC';
@@ -58,6 +59,7 @@ export class GameScene extends BaseScene {
   }
   private combatSystem!: CombatSystem;
   private visualEffects!: VisualEffectsManager;
+  private roomDecorationManager!: RoomDecorationManager;
   private lootSystem!: LootSystem;
   private minimapUI!: MinimapUI;
   private levelUpUI!: LevelUpUI;
@@ -66,6 +68,8 @@ export class GameScene extends BaseScene {
   private hazardSystem!: HazardSystem;
   private loreSystem!: LoreSystem;
   private loreObjects!: Phaser.Physics.Arcade.Group;
+  private chests!: Phaser.Physics.Arcade.Group;
+  private shrines!: Phaser.Physics.Arcade.Group;
   private activeLoreModal: Phaser.GameObjects.Container | null = null;
   private lorePrompt!: Phaser.GameObjects.Text;
   private dungeonNPCs: NPC[] = [];
@@ -150,35 +154,47 @@ export class GameScene extends BaseScene {
       this.saveGame();
     }
 
-    // Create special room object groups (must be before addRoomDecorations)
-    this.chests = this.physics.add.group();
-    this.shrines = this.physics.add.group();
-    this.loreSystem = new LoreSystem();
-    this.loreObjects = this.physics.add.group();
-
-    // Add room decorations (chests, shrines, lore) after player exists for physics overlaps
-    this.addRoomDecorations();
-
-    // Setup special room collisions
-    this.physics.add.overlap(
-      this.player, this.chests,
-      this.handleChestOpen as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
-      undefined, this
-    );
-    this.physics.add.overlap(
-      this.player, this.shrines,
-      this.handleShrineUse as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
-      undefined, this
-    );
-
     // Create projectile groups
     this.playerAttackManager = new PlayerAttackManager(this, this.player, this.audioSystem);
     this.playerAttackManager.create();
     this.enemyProjectiles = this.physics.add.group({ runChildUpdate: true });
 
-    // Create loot drop manager
+    // Create loot drop manager (must be before roomDecorationManager)
     this.lootDropManager = new LootDropManager(this, this.player, this.audioSystem);
     this.lootDropManager.create();
+
+    // Create room decoration manager
+    this.roomDecorationManager = new RoomDecorationManager(
+      this, this.player, this.dungeon, this.lightingSystem, this.audioSystem,
+      this.lootSystem, this.lootDropManager, this.visualEffects, this.floor
+    );
+    this.roomDecorationManager.create();
+    this.chests = this.roomDecorationManager.getChests();
+    this.shrines = this.roomDecorationManager.getShrines();
+
+    // Create lore system and group
+    this.loreSystem = new LoreSystem();
+    this.loreObjects = this.physics.add.group();
+
+    // Add room decorations (chests, shrines, candles) with callback for lore placement
+    this.roomDecorationManager.addRoomDecorations((room) => {
+      this.tryAddLoreObject(room);
+      if (room.type === RoomType.SHRINE) {
+        this.addLoreObject(room, 'tablet');
+      }
+    });
+
+    // Setup special room collisions
+    this.physics.add.overlap(
+      this.player, this.chests,
+      this.roomDecorationManager.handleChestOpen.bind(this.roomDecorationManager) as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
+      undefined, this
+    );
+    this.physics.add.overlap(
+      this.player, this.shrines,
+      this.roomDecorationManager.handleShrineUse.bind(this.roomDecorationManager) as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
+      undefined, this
+    );
 
     // Create debug menu UI
     this.debugMenuUI = new DebugMenuUI(
@@ -245,6 +261,7 @@ export class GameScene extends BaseScene {
 
     this.inventoryUI = new InventoryUI(this, this.player);
     this.minimapUI = new MinimapUI(this, this.dungeon);
+    this.roomDecorationManager.setMinimapUI(this.minimapUI);
     this.levelUpUI = new LevelUpUI(this, this.player);
     this.settingsUI = new SettingsUI(this, this.audioSystem);
     this.dialogueUI = new DialogueUI(this);
@@ -431,243 +448,6 @@ export class GameScene extends BaseScene {
         return 'floor_challenge';
       default:
         return defaultFloor;
-    }
-  }
-
-  private addRoomDecorations(): void {
-    for (const room of this.dungeon.rooms) {
-      // Add candles to all rooms for atmosphere
-      // Spawn room (id 0) starts lit, other rooms start dark until activated
-      const startLit = room.id === 0;
-      this.addWallCandles(room, startLit);
-
-      // Add lore objects to some rooms
-      this.tryAddLoreObject(room);
-
-      switch (room.type) {
-        case RoomType.TREASURE:
-          // Add chest in center
-          this.addTreasureChest(room);
-          break;
-        case RoomType.SHRINE:
-          // Add healing shrine
-          this.addHealingShrine(room);
-          // Shrines always have a tablet nearby
-          this.addLoreObject(room, 'tablet');
-          break;
-        case RoomType.CHALLENGE:
-          // Add skull markers in corners
-          this.addChallengeMarkers(room);
-          break;
-        case RoomType.TRAP:
-          // Trap room decorations handled by hazard system
-          break;
-      }
-    }
-  }
-
-  private chests!: Phaser.Physics.Arcade.Group;
-  private shrines!: Phaser.Physics.Arcade.Group;
-
-  private addTreasureChest(room: Room): void {
-    const chestX = room.centerX * TILE_SIZE + TILE_SIZE / 2;
-    const chestY = room.centerY * TILE_SIZE + TILE_SIZE / 2;
-
-    const chest = this.chests.create(chestX, chestY, 'chest_closed') as Phaser.Physics.Arcade.Sprite;
-    chest.setDepth(3);
-    chest.setImmovable(true);
-    chest.setData('opened', false);
-    chest.setData('room', room);
-    chest.setPipeline('Light2D');
-
-    // Add real point light for glow
-    const light = this.lights.addLight(chestX, chestY, 100, 0xffd700, 0.7);
-    chest.setData('light', light);
-
-    // Pulse animation
-    this.tweens.add({
-      targets: light,
-      intensity: 1.0,
-      radius: 120,
-      duration: 800,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut',
-    });
-  }
-
-  private handleChestOpen(
-    _playerObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject,
-    chestObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject
-  ): void {
-    const chest = chestObj as Phaser.Physics.Arcade.Sprite;
-    if (chest.getData('opened')) return;
-
-    chest.setData('opened', true);
-    chest.setTexture('chest_open');
-
-    // Notify minimap
-    const room = chest.getData('room') as Room;
-    if (room) {
-      this.minimapUI.markChestOpened(room.id);
-    }
-
-    // Remove light
-    const light = chest.getData('light') as Phaser.GameObjects.Light;
-    if (light) {
-      this.tweens.killTweensOf(light);
-      this.lights.removeLight(light);
-    }
-
-    // Spawn loot - guaranteed rare+ item and weapon
-    const lootX = chest.x;
-    const lootY = chest.y - 20;
-
-    this.audioSystem.play('sfx_pickup', 0.6);
-    this.visualEffects.showGameMessage('Treasure found!');
-
-    // Spawn multiple items with offset
-    const treasureLoot = this.lootSystem.generateGuaranteedLoot(ItemRarity.RARE);
-    this.lootDropManager.spawnItemDrop(lootX - 15, lootY, treasureLoot);
-
-    // Chance for second item
-    if (Math.random() < 0.5) {
-      const bonusLoot = this.lootSystem.generateGuaranteedLoot(ItemRarity.UNCOMMON);
-      this.lootDropManager.spawnItemDrop(lootX + 15, lootY, bonusLoot);
-    }
-
-    // Guaranteed weapon from treasure chests
-    const weapon = Weapon.createRandom(this.floor + 3);
-    this.lootDropManager.spawnWeaponDrop(lootX, lootY - 20, weapon);
-  }
-
-  private addHealingShrine(room: Room): void {
-    const shrineX = room.centerX * TILE_SIZE + TILE_SIZE / 2;
-    const shrineY = room.centerY * TILE_SIZE + TILE_SIZE / 2;
-
-    const shrine = this.shrines.create(shrineX, shrineY, 'shrine') as Phaser.Physics.Arcade.Sprite;
-    shrine.setDepth(3);
-    shrine.setImmovable(true);
-    shrine.setData('used', false);
-    shrine.setData('room', room);
-    shrine.setPipeline('Light2D');
-
-    // Add real point light for glow
-    const light = this.lights.addLight(shrineX, shrineY, 120, 0x22d3ee, 0.8);
-    shrine.setData('light', light);
-
-    // Pulse animation
-    this.tweens.add({
-      targets: light,
-      intensity: 1.1,
-      radius: 150,
-      duration: 1000,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut',
-    });
-
-    // Floating animation for shrine
-    this.tweens.add({
-      targets: shrine,
-      y: shrineY - 3,
-      duration: 1500,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut',
-    });
-  }
-
-  private handleShrineUse(
-    _playerObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject,
-    shrineObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject
-  ): void {
-    const shrine = shrineObj as Phaser.Physics.Arcade.Sprite;
-    if (shrine.getData('used')) return;
-
-    shrine.setData('used', true);
-
-    // Notify minimap
-    const room = shrine.getData('room') as Room;
-    if (room) {
-      this.minimapUI.markShrineUsed(room.id);
-    }
-
-    // Heal player to full
-    const healAmount = this.player.maxHp - this.player.hp;
-    this.player.hp = this.player.maxHp;
-
-    // Remove light and fade shrine
-    const light = shrine.getData('light') as Phaser.GameObjects.Light;
-    if (light) {
-      this.tweens.killTweensOf(light);
-      this.tweens.add({
-        targets: light,
-        intensity: 0,
-        duration: 500,
-        onComplete: () => this.lights.removeLight(light),
-      });
-    }
-
-    // Fade shrine to indicate used
-    this.tweens.killTweensOf(shrine);
-    shrine.setTint(0x666666);
-    shrine.setAlpha(0.6);
-
-    // Show healing effect
-    this.audioSystem.play('sfx_levelup', 0.4);
-    this.visualEffects.showGameMessage(`Healed ${healAmount} HP!`);
-
-    // Healing particles
-    for (let i = 0; i < 10; i++) {
-      const particle = this.add.circle(
-        shrine.x + Phaser.Math.Between(-20, 20),
-        shrine.y + Phaser.Math.Between(-20, 20),
-        Phaser.Math.Between(2, 4),
-        0x22d3ee
-      );
-      particle.setDepth(100);
-      particle.setAlpha(0.8);
-
-      this.tweens.add({
-        targets: particle,
-        y: particle.y - 40,
-        alpha: 0,
-        duration: Phaser.Math.Between(500, 800),
-        onComplete: () => particle.destroy(),
-      });
-    }
-  }
-
-  private addChallengeMarkers(room: Room): void {
-    // Add skull markers in corners
-    const corners = [
-      { x: room.x + 1, y: room.y + 1 },
-      { x: room.x + room.width - 2, y: room.y + 1 },
-      { x: room.x + 1, y: room.y + room.height - 2 },
-      { x: room.x + room.width - 2, y: room.y + room.height - 2 },
-    ];
-
-    for (const corner of corners) {
-      const marker = this.add.sprite(
-        corner.x * TILE_SIZE + TILE_SIZE / 2,
-        corner.y * TILE_SIZE + TILE_SIZE / 2,
-        'skull_marker'
-      );
-      marker.setDepth(2);
-      marker.setAlpha(0.7);
-      marker.setPipeline('Light2D');
-
-      // Subtle pulse
-      this.tweens.add({
-        targets: marker,
-        alpha: 0.9,
-        scale: 1.1,
-        duration: 1000,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut',
-      });
     }
   }
 
@@ -1065,83 +845,6 @@ export class GameScene extends BaseScene {
     } else {
       this.lorePrompt.setVisible(false);
     }
-  }
-
-  private addWallCandles(room: Room, startLit: boolean = true): void {
-    // Add candles along walls for atmosphere
-    // Place candles at intervals along each wall, offset from corners
-    // Only place candles where there's actually a wall tile
-    // Torches start unlit in unvisited rooms, light up when room is sealed
-
-    const tiles = this.dungeon.tiles;
-    const candlePositions: { x: number; y: number }[] = [];
-
-    // Helper to check if a tile is a wall
-    const isWall = (x: number, y: number): boolean => {
-      if (y < 0 || y >= tiles.length || x < 0 || x >= tiles[0].length) return false;
-      return tiles[y][x] === 1;
-    };
-
-    // Top wall - only place if the tile above is a wall
-    const topY = room.y;
-    for (let x = room.x + 2; x < room.x + room.width - 2; x += 4) {
-      if (isWall(x, topY - 1)) {
-        candlePositions.push({ x, y: topY });
-      }
-    }
-
-    // Bottom wall - only place if the tile below is a wall
-    const bottomY = room.y + room.height - 1;
-    for (let x = room.x + 2; x < room.x + room.width - 2; x += 4) {
-      if (isWall(x, bottomY + 1)) {
-        candlePositions.push({ x, y: bottomY });
-      }
-    }
-
-    // Left wall - only place if the tile to the left is a wall
-    const leftX = room.x;
-    for (let y = room.y + 2; y < room.y + room.height - 2; y += 4) {
-      if (isWall(leftX - 1, y)) {
-        candlePositions.push({ x: leftX, y });
-      }
-    }
-
-    // Right wall - only place if the tile to the right is a wall
-    const rightX = room.x + room.width - 1;
-    for (let y = room.y + 2; y < room.y + room.height - 2; y += 4) {
-      if (isWall(rightX + 1, y)) {
-        candlePositions.push({ x: rightX, y });
-      }
-    }
-
-    // Create candle sprites with flickering animation and actual lights
-    candlePositions.forEach((pos) => {
-      const candleX = pos.x * TILE_SIZE + TILE_SIZE / 2;
-      const candleY = pos.y * TILE_SIZE + TILE_SIZE / 2;
-
-      const candle = this.add.sprite(candleX, candleY, 'candle');
-      candle.setDepth(5);
-      // Apply Light2D pipeline so candle sprite is lit properly
-      candle.setPipeline('Light2D');
-
-      // Create actual point light at candle position
-      // Pass room ID so we can light up torches when room is activated
-      if (this.lightingSystem) {
-        this.lightingSystem.createTorchLight(candleX, candleY, undefined, room.id, startLit);
-      }
-
-      // Subtle flicker animation for the sprite
-      this.tweens.add({
-        targets: candle,
-        alpha: { from: 0.85, to: 1 },
-        scaleX: { from: 0.95, to: 1.05 },
-        duration: Phaser.Math.Between(150, 300),
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut',
-        delay: Phaser.Math.Between(0, 500),
-      });
-    });
   }
 
   private exit!: Phaser.Physics.Arcade.Sprite;
