@@ -21,7 +21,7 @@ export class NetworkManager {
 
   private onPeerJoinCallback: ((peerId: string) => void) | null = null;
   private onPeerLeaveCallback: ((peerId: string) => void) | null = null;
-  private onMessageCallback: ((message: SyncMessage, peerId: string) => void) | null = null;
+  private messageListeners: ((message: SyncMessage, peerId: string) => void)[] = [];
   private onConnectionStateChangeCallback: ((state: ConnectionState) => void) | null = null;
 
   private constructor() {}
@@ -83,7 +83,10 @@ export class NetworkManager {
     this.sendMessage = sendMessage;
 
     getMessage((data, peerId) => {
-      this.onMessageCallback?.(data as SyncMessage, peerId);
+      const message = data as SyncMessage;
+      for (const listener of this.messageListeners) {
+        listener(message, peerId);
+      }
     });
 
     this.room.onPeerLeave((peerId) => {
@@ -175,7 +178,7 @@ export class NetworkManager {
   }
 
   onMessage(callback: (message: SyncMessage, peerId: string) => void): void {
-    this.onMessageCallback = callback;
+    this.messageListeners.push(callback);
   }
 
   onConnectionStateChange(callback: (state: ConnectionState) => void): void {
@@ -192,6 +195,7 @@ export class NetworkManager {
     this._isConnected = false;
     this._peerId = null;
     this._roomCode = null;
+    this.messageListeners = [];
     this.setConnectionState('disconnected');
   }
 
