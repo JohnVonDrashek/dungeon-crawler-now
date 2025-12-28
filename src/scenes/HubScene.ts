@@ -14,7 +14,7 @@ import { NPC, HUB_NPCS } from '../entities/NPC';
 import { networkManager } from '../multiplayer/NetworkManager';
 import { PlayerSync } from '../multiplayer/PlayerSync';
 import { RemotePlayer } from '../multiplayer/RemotePlayer';
-import { MessageType, PlayerPosMessage } from '../multiplayer/SyncMessages';
+import { MessageType, PlayerPosMessage, SceneChangeMessage } from '../multiplayer/SyncMessages';
 
 interface PortalData {
   world: SinWorld;
@@ -106,17 +106,27 @@ export class HubScene extends BaseScene {
       this.playerSync = new PlayerSync(this.player);
 
       // Create remote player for the other player
+      // If I'm host, the remote player is the helper. If I'm guest, remote is the host.
       this.remotePlayer = new RemotePlayer(
         this,
         spawnX + 30,
         spawnY,
-        !networkManager.isHost // helper flag
+        networkManager.isHost // true = remote is helper, false = remote is host
       );
 
-      // Listen for position updates
+      // Listen for network messages
       networkManager.onMessage((message, _peerId) => {
         if (message.type === MessageType.PLAYER_POS && this.remotePlayer) {
           this.remotePlayer.applyPositionUpdate(message as PlayerPosMessage);
+        } else if (message.type === MessageType.SCENE_CHANGE) {
+          // Guest follows host to new scene
+          const sceneMsg = message as SceneChangeMessage;
+          if (sceneMsg.sceneName === 'GameScene' && sceneMsg.data) {
+            this.registry.set('currentWorld', sceneMsg.data.world);
+            this.registry.set('floor', sceneMsg.data.floor);
+            this.audioSystem.stopMusic();
+            this.scene.start('GameScene');
+          }
         }
       });
     }
@@ -987,6 +997,11 @@ export class HubScene extends BaseScene {
   }
 
   private enterWorld(world: SinWorld): void {
+    // In multiplayer, only host can enter worlds
+    if (networkManager.isMultiplayer && !networkManager.isHost) {
+      return;
+    }
+
     // Save current state
     this.saveGame();
 
@@ -996,6 +1011,16 @@ export class HubScene extends BaseScene {
     // Set registry values for GameScene
     this.registry.set('currentWorld', world);
     this.registry.set('floor', 1);
+
+    // Broadcast scene change to guest
+    if (networkManager.isMultiplayer && networkManager.isHost) {
+      const sceneMsg: SceneChangeMessage = {
+        type: MessageType.SCENE_CHANGE,
+        sceneName: 'GameScene',
+        data: { world, floor: 1 },
+      };
+      networkManager.broadcast(sceneMsg);
+    }
 
     // Transition to GameScene
     this.audioSystem.stopMusic();
