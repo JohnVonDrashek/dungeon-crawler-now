@@ -16,6 +16,7 @@ import { LoreSystem, LoreEntry } from '../systems/LoreSystem';
 import { LootDropManager } from '../systems/LootDropManager';
 import { PlayerAttackManager } from '../systems/PlayerAttackManager';
 import { EnemySpawnManager } from '../systems/EnemySpawnManager';
+import { VisualEffectsManager } from '../systems/VisualEffectsManager';
 import { progressionManager } from '../systems/ProgressionSystem';
 import { SinWorld, getWorldConfig } from '../config/WorldConfig';
 import { NPC, createLostSoulData, createWarningSpirit } from '../entities/NPC';
@@ -54,6 +55,7 @@ export class GameScene extends BaseScene {
     return this.enemySpawnManager.getEnemiesGroup();
   }
   private combatSystem!: CombatSystem;
+  private visualEffects!: VisualEffectsManager;
   private lootSystem!: LootSystem;
   private minimapUI!: MinimapUI;
   private levelUpUI!: LevelUpUI;
@@ -103,6 +105,7 @@ export class GameScene extends BaseScene {
     this.itemsCollected = this.registry.get('itemsCollected') || 0;
 
     this.combatSystem = new CombatSystem(this);
+    this.visualEffects = new VisualEffectsManager(this);
     this.lootSystem = new LootSystem(0.5);
     this.initAudio('exploration');
 
@@ -183,17 +186,27 @@ export class GameScene extends BaseScene {
     this.enemySpawnManager.create();
 
     // Initialize multiplayer if connected (after enemySpawnManager exists)
+    console.log('[GameScene] Multiplayer state:', {
+      isMultiplayer: networkManager.isMultiplayer,
+      isHost: networkManager.isHost,
+      isGuest: networkManager.isGuest,
+      roomCode: networkManager.roomCode,
+    });
+
     if (networkManager.isMultiplayer) {
       this.playerSync = new PlayerSync(this.player);
 
       if (networkManager.isHost) {
+        console.log('[GameScene] Creating HostController');
         this.hostController = new HostController(
           this,
           this.player,
           this.enemies
         );
       } else {
+        console.log('[GameScene] Creating GuestController');
         this.guestController = new GuestController(this, this.player);
+        this.guestController.setRoomManager(this.roomManager);
       }
     }
 
@@ -255,7 +268,20 @@ export class GameScene extends BaseScene {
     // In multiplayer, only host triggers room activation
     const canActivateRooms = !networkManager.isMultiplayer || networkManager.isHost;
     const enteredRoom = this.roomManager.update(this.player.x, this.player.y);
+
+    // Debug logging for multiplayer room issues
+    if (enteredRoom) {
+      console.log('[GameScene] Room entry detected:', {
+        roomId: enteredRoom.id,
+        canActivateRooms,
+        isMultiplayer: networkManager.isMultiplayer,
+        isHost: networkManager.isHost,
+      });
+    }
+
     if (enteredRoom && canActivateRooms) {
+      console.log('[GameScene] Room activated:', enteredRoom.id, 'isHost:', networkManager.isHost);
+
       // Light up the torches in this room when it's sealed
       if (this.lightingSystem) {
         this.lightingSystem.lightRoom(enteredRoom.id);
@@ -264,6 +290,11 @@ export class GameScene extends BaseScene {
       const exitRoom = this.dungeon.rooms[this.dungeon.rooms.length - 1];
       this.enemySpawnManager.spawnEnemiesInRoom(enteredRoom, this.isBossFloor, exitRoom);
       this.hazardSystem.spawnHazardsInRoom(enteredRoom, this.dungeon);
+
+      // In multiplayer, tell guest to teleport to host
+      if (this.hostController) {
+        this.hostController.broadcastRoomActivated(enteredRoom.id);
+      }
     }
 
     this.enemies.getChildren().forEach((child) => {
@@ -473,7 +504,7 @@ export class GameScene extends BaseScene {
     const lootY = chest.y - 20;
 
     this.audioSystem.play('sfx_pickup', 0.6);
-    this.showGameMessage('Treasure found!');
+    this.visualEffects.showGameMessage('Treasure found!');
 
     // Spawn multiple items with offset
     const treasureLoot = this.lootSystem.generateGuaranteedLoot(ItemRarity.RARE);
@@ -565,7 +596,7 @@ export class GameScene extends BaseScene {
 
     // Show healing effect
     this.audioSystem.play('sfx_levelup', 0.4);
-    this.showGameMessage(`Healed ${healAmount} HP!`);
+    this.visualEffects.showGameMessage(`Healed ${healAmount} HP!`);
 
     // Healing particles
     for (let i = 0; i < 10; i++) {
@@ -1197,8 +1228,8 @@ export class GameScene extends BaseScene {
     const result = this.combatSystem.calculateDamage(enemy, player);
     this.combatSystem.applyDamage(player, result);
     this.audioSystem.play('sfx_hurt', 0.4);
-    this.shakeCamera(5, 100);
-    this.showDamageNumber(player.x, player.y, result.damage, true);
+    this.visualEffects.shakeCamera(5, 100);
+    this.visualEffects.showDamageNumber(player.x, player.y, result.damage, true);
   }
 
   private handleEnemyProjectilePlayerCollision(
@@ -1216,8 +1247,8 @@ export class GameScene extends BaseScene {
     const damage = projectile.getData('damage') || 5;
     player.takeDamage(damage);
     this.audioSystem.play('sfx_hurt', 0.4);
-    this.shakeCamera(5, 100);
-    this.showDamageNumber(player.x, player.y, damage, true);
+    this.visualEffects.shakeCamera(5, 100);
+    this.visualEffects.showDamageNumber(player.x, player.y, damage, true);
     projectile.destroy();
   }
 
@@ -1233,7 +1264,7 @@ export class GameScene extends BaseScene {
 
     // Block exit on boss floor until boss is defeated
     if (this.isBossFloor && this.hasBossAlive()) {
-      this.showGameMessage('Defeat the boss first!');
+      this.visualEffects.showGameMessage('Defeat the boss first!');
       return;
     }
 
@@ -1457,11 +1488,11 @@ export class GameScene extends BaseScene {
   private setupEventHandlers(): void {
     // Events from PlayerAttackManager
     this.events.on('showDamageNumber', (x: number, y: number, damage: number, isPlayer: boolean) => {
-      this.showDamageNumber(x, y, damage, isPlayer);
+      this.visualEffects.showDamageNumber(x, y, damage, isPlayer);
     });
 
     this.events.on('shakeCamera', (intensity: number, duration: number) => {
-      this.shakeCamera(intensity, duration);
+      this.visualEffects.shakeCamera(intensity, duration);
     });
 
     this.events.on('requestEnemiesGroup', (callback: (enemies: Phaser.Physics.Arcade.Group) => void) => {
@@ -1476,7 +1507,7 @@ export class GameScene extends BaseScene {
       this.player.gainXP(enemy.xpValue);
       this.audioSystem.play('sfx_enemy_death', 0.4);
       this.enemySpawnManager.removeHealthBar(enemy);
-      this.spawnDeathParticles(enemy.x, enemy.y);
+      this.visualEffects.spawnDeathParticles(enemy.x, enemy.y);
       this.enemiesKilled++;
       this.registry.set('enemiesKilled', this.enemiesKilled);
 
@@ -1542,8 +1573,8 @@ export class GameScene extends BaseScene {
         const result = this.combatSystem.calculateDamage(enemy, target);
         this.combatSystem.applyDamage(target, result);
         this.audioSystem.play('sfx_hurt', 0.4);
-        this.shakeCamera(5, 100);
-        this.showDamageNumber(target.x, target.y, result.damage, true);
+        this.visualEffects.shakeCamera(5, 100);
+        this.visualEffects.showDamageNumber(target.x, target.y, result.damage, true);
       }
     });
 
@@ -1551,8 +1582,8 @@ export class GameScene extends BaseScene {
     this.events.on('hazardDamage', (damage: number, _source: string) => {
       if (!this.devMode) {
         this.audioSystem.play('sfx_hurt', 0.3);
-        this.shakeCamera(3, 80);
-        this.showDamageNumber(this.player.x, this.player.y, damage, true);
+        this.visualEffects.shakeCamera(3, 80);
+        this.visualEffects.showDamageNumber(this.player.x, this.player.y, damage, true);
       }
     });
 
@@ -1567,13 +1598,13 @@ export class GameScene extends BaseScene {
     });
 
     this.events.on('inventoryFull', () => {
-      this.showGameMessage('Inventory full!');
+      this.visualEffects.showGameMessage('Inventory full!');
     });
 
     // Listen for level up
     this.events.on('playerLevelUp', () => {
       this.audioSystem.play('sfx_levelup', 0.5);
-      this.showLevelUpNotification();
+      this.visualEffects.showLevelUpNotification();
     });
 
     // === SIN ENEMY EVENTS ===
@@ -1595,13 +1626,13 @@ export class GameScene extends BaseScene {
     // Pride's damage reflection - damage player when attacking Pride
     this.events.on('damageReflected', (damage: number) => {
       this.player.takeDamage(damage);
-      this.showDamageNumber(this.player.x, this.player.y, damage, true);
-      this.showFloatingText(this.player.x, this.player.y - 30, 'REFLECTED!', '#ffd700');
+      this.visualEffects.showDamageNumber(this.player.x, this.player.y, damage, true);
+      this.visualEffects.showFloatingText(this.player.x, this.player.y - 30, 'REFLECTED!', '#ffd700');
     });
 
     // Greed's gold stealing - show notification
     this.events.on('goldStolen', (amount: number) => {
-      this.showFloatingText(this.player.x, this.player.y - 30, `-${amount} gold!`, '#ffd700');
+      this.visualEffects.showFloatingText(this.player.x, this.player.y - 30, `-${amount} gold!`, '#ffd700');
     });
   }
 
@@ -1934,135 +1965,6 @@ export class GameScene extends BaseScene {
       const enemy = child as unknown as Enemy;
       // Check for BossEnemy or sin bosses (all bosses have scale >= 2)
       return enemy.active && (enemy instanceof BossEnemy || enemy.scale >= 2);
-    });
-  }
-
-  private showGameMessage(msg: string): void {
-    const text = this.add.text(
-      this.cameras.main.width / 2,
-      this.cameras.main.height * 0.3,
-      msg,
-      {
-        fontSize: '24px',
-        color: '#ff4444',
-        fontStyle: 'bold',
-        stroke: '#000000',
-        strokeThickness: 3,
-      }
-    );
-    text.setOrigin(0.5);
-    text.setScrollFactor(0);
-    text.setDepth(200);
-
-    this.tweens.add({
-      targets: text,
-      alpha: 0,
-      y: text.y - 30,
-      duration: 1500,
-      delay: 500,
-      onComplete: () => text.destroy(),
-    });
-  }
-
-  private shakeCamera(intensity: number, duration: number): void {
-    this.cameras.main.shake(duration, intensity / 1000);
-  }
-
-  private showDamageNumber(x: number, y: number, damage: number, isPlayer: boolean): void {
-    const color = isPlayer ? '#ff4444' : '#ffffff';
-    const text = this.add.text(x, y - 20, `-${damage}`, {
-      fontSize: '16px',
-      fontStyle: 'bold',
-      color: color,
-      stroke: '#000000',
-      strokeThickness: 3,
-    });
-    text.setOrigin(0.5);
-    text.setDepth(150);
-
-    this.tweens.add({
-      targets: text,
-      y: y - 50,
-      alpha: 0,
-      duration: 800,
-      ease: 'Power2',
-      onComplete: () => text.destroy(),
-    });
-  }
-
-  private showFloatingText(x: number, y: number, message: string, color: string): void {
-    const text = this.add.text(x, y, message, {
-      fontSize: '14px',
-      fontStyle: 'bold',
-      color: color,
-      stroke: '#000000',
-      strokeThickness: 3,
-    });
-    text.setOrigin(0.5);
-    text.setDepth(150);
-
-    this.tweens.add({
-      targets: text,
-      y: y - 40,
-      alpha: 0,
-      duration: 1000,
-      ease: 'Power2',
-      onComplete: () => text.destroy(),
-    });
-  }
-
-  private spawnDeathParticles(x: number, y: number): void {
-    const colors = [0xff4444, 0xff6666, 0xcc3333, 0xffaaaa];
-    const particleCount = 8;
-
-    for (let i = 0; i < particleCount; i++) {
-      const color = Phaser.Math.RND.pick(colors);
-      const particle = this.add.circle(x, y, Phaser.Math.Between(2, 5), color);
-      particle.setDepth(100);
-
-      const angle = (i / particleCount) * Math.PI * 2;
-      const speed = Phaser.Math.Between(50, 120);
-      const targetX = x + Math.cos(angle) * speed;
-      const targetY = y + Math.sin(angle) * speed;
-
-      this.tweens.add({
-        targets: particle,
-        x: targetX,
-        y: targetY,
-        alpha: 0,
-        scale: 0.3,
-        duration: Phaser.Math.Between(300, 500),
-        ease: 'Power2',
-        onComplete: () => particle.destroy(),
-      });
-    }
-  }
-
-  private showLevelUpNotification(): void {
-    const text = this.add.text(
-      this.cameras.main.width / 2,
-      this.cameras.main.height * 0.3,
-      `LEVEL UP!\nPress L to allocate stats`,
-      {
-        fontSize: '24px',
-        color: '#fbbf24',
-        fontStyle: 'bold',
-        align: 'center',
-        stroke: '#000000',
-        strokeThickness: 3,
-      }
-    );
-    text.setOrigin(0.5);
-    text.setScrollFactor(0);
-    text.setDepth(200);
-
-    this.tweens.add({
-      targets: text,
-      alpha: 0,
-      y: text.y - 40,
-      duration: 2500,
-      delay: 1000,
-      onComplete: () => text.destroy(),
     });
   }
 
