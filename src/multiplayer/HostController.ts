@@ -45,6 +45,12 @@ export class HostController {
 
     this.setupMessageHandlers();
     this.setupPeerHandlers();
+
+    // If guest is already connected (from MenuScene), create remote player now
+    if (networkManager.isConnected) {
+      this.createRemotePlayer();
+      this.sendInitialState();
+    }
   }
 
   private setupMessageHandlers(): void {

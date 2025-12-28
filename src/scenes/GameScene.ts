@@ -106,7 +106,9 @@ export class GameScene extends BaseScene {
     this.lootSystem = new LootSystem(0.5);
     this.initAudio('exploration');
 
-    this.dungeonGenerator = new DungeonGenerator(DUNGEON_WIDTH, DUNGEON_HEIGHT);
+    // Use room code as seed for multiplayer (both clients get same dungeon)
+    const dungeonSeed = networkManager.isMultiplayer ? networkManager.roomCode : undefined;
+    this.dungeonGenerator = new DungeonGenerator(DUNGEON_WIDTH, DUNGEON_HEIGHT, dungeonSeed ?? undefined);
     this.dungeon = this.dungeonGenerator.generate();
 
     this.physics.world.setBounds(0, 0, DUNGEON_WIDTH * TILE_SIZE, DUNGEON_HEIGHT * TILE_SIZE);

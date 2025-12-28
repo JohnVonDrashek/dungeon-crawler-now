@@ -34,10 +34,35 @@ export class DungeonGenerator {
   private height: number;
   private tiles: number[][] = [];
   private rooms: Room[] = [];
+  private seed: number;
+  private randomState: number;
 
-  constructor(width: number, height: number) {
+  constructor(width: number, height: number, seed?: string) {
     this.width = width;
     this.height = height;
+    // Convert seed string to number, or use random
+    this.seed = seed ? this.hashString(seed) : Math.floor(Math.random() * 2147483647);
+    this.randomState = this.seed;
+  }
+
+  // Simple string hash function
+  private hashString(str: string): number {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    return Math.abs(hash) || 1;
+  }
+
+  // Seeded random number generator (Mulberry32)
+  private random(): number {
+    this.randomState += 0x6D2B79F5;
+    let t = this.randomState;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   }
 
   generate(): DungeonData {
@@ -86,7 +111,7 @@ export class DungeonGenerator {
     if (middleRooms.length === 0) return;
 
     // Shuffle middle rooms for random assignment
-    const shuffled = [...middleRooms].sort(() => Math.random() - 0.5);
+    const shuffled = [...middleRooms].sort(() => this.random() - 0.5);
 
     // Assign special room types (guaranteed one of each if enough rooms)
     const specialTypes = [
@@ -98,7 +123,7 @@ export class DungeonGenerator {
 
     let typeIndex = 0;
     for (const room of shuffled) {
-      if (typeIndex < specialTypes.length && Math.random() < 0.6) {
+      if (typeIndex < specialTypes.length && this.random() < 0.6) {
         // 60% chance for each special type
         room.type = specialTypes[typeIndex];
         typeIndex++;
@@ -108,20 +133,20 @@ export class DungeonGenerator {
   }
 
   private generateRooms(): void {
-    const numRooms = Math.floor(Math.random() * 5) + 6; // 6-10 rooms
+    const numRooms = Math.floor(this.random() * 5) + 6; // 6-10 rooms
 
     for (let i = 0; i < numRooms * 50; i++) {
       if (this.rooms.length >= numRooms) break;
 
       const roomWidth =
-        Math.floor(Math.random() * (MAX_ROOM_SIZE - MIN_ROOM_SIZE + 1)) +
+        Math.floor(this.random() * (MAX_ROOM_SIZE - MIN_ROOM_SIZE + 1)) +
         MIN_ROOM_SIZE;
       const roomHeight =
-        Math.floor(Math.random() * (MAX_ROOM_SIZE - MIN_ROOM_SIZE + 1)) +
+        Math.floor(this.random() * (MAX_ROOM_SIZE - MIN_ROOM_SIZE + 1)) +
         MIN_ROOM_SIZE;
 
-      const x = Math.floor(Math.random() * (this.width - roomWidth - 2)) + 1;
-      const y = Math.floor(Math.random() * (this.height - roomHeight - 2)) + 1;
+      const x = Math.floor(this.random() * (this.width - roomWidth - 2)) + 1;
+      const y = Math.floor(this.random() * (this.height - roomHeight - 2)) + 1;
 
       const newRoom: Room = {
         x,
@@ -178,7 +203,7 @@ export class DungeonGenerator {
       const roomB = this.rooms[i];
 
       // Randomly choose horizontal-first or vertical-first
-      if (Math.random() < 0.5) {
+      if (this.random() < 0.5) {
         this.carveHorizontalCorridor(roomA.centerX, roomB.centerX, roomA.centerY);
         this.carveVerticalCorridor(roomA.centerY, roomB.centerY, roomB.centerX);
       } else {
@@ -301,8 +326,8 @@ export class DungeonGenerator {
       const numInRoom = Math.ceil(count / validRooms.length);
 
       for (let i = 0; i < numInRoom && positions.length < count; i++) {
-        const x = room.x + Math.floor(Math.random() * room.width);
-        const y = room.y + Math.floor(Math.random() * room.height);
+        const x = room.x + Math.floor(this.random() * room.width);
+        const y = room.y + Math.floor(this.random() * room.height);
         positions.push({ x, y });
       }
     }
