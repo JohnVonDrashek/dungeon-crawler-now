@@ -5,7 +5,7 @@ import { AudioSystem } from './AudioSystem';
 import { Weapon, WeaponType } from './Weapon';
 import { TILE_SIZE } from '../utils/constants';
 import { networkManager } from '../multiplayer/NetworkManager';
-import { MessageType, PlayerHitMessage } from '../multiplayer/SyncMessages';
+import { MessageType, PlayerHitMessage, PlayerAttackMessage } from '../multiplayer/SyncMessages';
 
 export class PlayerAttackManager {
   private scene: Phaser.Scene;
@@ -49,6 +49,19 @@ export class PlayerAttackManager {
     );
 
     this.player.startAttackCooldown();
+
+    // Broadcast attack to other player
+    if (networkManager.isMultiplayer) {
+      const attackMsg: PlayerAttackMessage = {
+        type: MessageType.PLAYER_ATTACK,
+        attackType: weapon.stats.type,
+        direction: this.player.getFacingDirection(),
+        x: this.player.x,
+        y: this.player.y,
+        angle: angle,
+      };
+      networkManager.broadcast(attackMsg);
+    }
 
     switch (weapon.stats.type) {
       case WeaponType.SWORD:

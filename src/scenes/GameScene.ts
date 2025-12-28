@@ -252,8 +252,10 @@ export class GameScene extends BaseScene {
     this.lightingSystem.updatePlayerTorch(this.player.x, this.player.y);
 
     // Check for room entry (returns room if entering a new unvisited room)
+    // In multiplayer, only host triggers room activation
+    const canActivateRooms = !networkManager.isMultiplayer || networkManager.isHost;
     const enteredRoom = this.roomManager.update(this.player.x, this.player.y);
-    if (enteredRoom) {
+    if (enteredRoom && canActivateRooms) {
       // Light up the torches in this room when it's sealed
       if (this.lightingSystem) {
         this.lightingSystem.lightRoom(enteredRoom.id);

@@ -16,6 +16,7 @@ export class RemotePlayer extends Phaser.Physics.Arcade.Sprite {
 
   private nameTag: Phaser.GameObjects.Text;
   private isDead: boolean = false;
+  private torchLight: Phaser.GameObjects.Light | null = null;
 
   constructor(scene: Phaser.Scene, x: number, y: number, isHelper: boolean = true) {
     super(scene, x, y, 'franciscan_idle', 0);
@@ -31,6 +32,9 @@ export class RemotePlayer extends Phaser.Physics.Arcade.Sprite {
 
     this.targetX = x;
     this.targetY = y;
+
+    // Add torch light for remote player
+    this.torchLight = scene.lights.addLight(x, y, 150, 0xffaa44, 0.8);
 
     // Add name tag
     this.nameTag = scene.add.text(x, y - 30, isHelper ? 'Helper' : 'Host', {
@@ -53,6 +57,11 @@ export class RemotePlayer extends Phaser.Physics.Arcade.Sprite {
 
     // Update name tag position
     this.nameTag.setPosition(this.x, this.y - 30);
+
+    // Update torch light position
+    if (this.torchLight) {
+      this.torchLight.setPosition(this.x, this.y);
+    }
 
     // Update animation
     const animKey = this.isMoving
@@ -125,6 +134,10 @@ export class RemotePlayer extends Phaser.Physics.Arcade.Sprite {
 
   destroy(fromScene?: boolean): void {
     this.nameTag.destroy();
+    if (this.torchLight) {
+      this.scene.lights.removeLight(this.torchLight);
+      this.torchLight = null;
+    }
     super.destroy(fromScene);
   }
 }

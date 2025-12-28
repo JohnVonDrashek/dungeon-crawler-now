@@ -39,6 +39,7 @@ export interface PlayerAttackMessage {
   direction: string;
   x: number;
   y: number;
+  angle?: number;
 }
 
 export interface PlayerHitMessage {

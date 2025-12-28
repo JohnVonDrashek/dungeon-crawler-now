@@ -13,6 +13,7 @@ import {
   PlayerPosMessage,
   PlayerHitMessage,
   PickupMessage,
+  PlayerAttackMessage,
 } from './SyncMessages';
 import { RemotePlayer } from './RemotePlayer';
 import { Player } from '../entities/Player';
@@ -66,6 +67,10 @@ export class HostController {
 
         case MessageType.PICKUP:
           this.handleGuestPickup(message as PickupMessage, peerId);
+          break;
+
+        case MessageType.PLAYER_ATTACK:
+          this.handleGuestAttack(message as PlayerAttackMessage);
           break;
       }
     });
@@ -135,6 +140,32 @@ export class HostController {
         break;
       }
     }
+  }
+
+  private handleGuestAttack(message: PlayerAttackMessage): void {
+    // Render visual projectile for guest's attack
+    if (!this.remotePlayer) return;
+
+    const angle = message.angle ?? 0;
+    const projectile = this.scene.add.sprite(message.x, message.y, 'projectile_wand');
+    projectile.setDepth(8);
+    projectile.setRotation(angle);
+    projectile.setTint(0x88aaff); // Blue tint for helper attacks
+
+    // Animate projectile moving in direction
+    const speed = 300;
+    const duration = 500;
+    this.scene.tweens.add({
+      targets: projectile,
+      x: message.x + Math.cos(angle) * speed,
+      y: message.y + Math.sin(angle) * speed,
+      alpha: 0,
+      duration: duration,
+      onComplete: () => projectile.destroy(),
+    });
+
+    // Visual feedback on remote player
+    this.remotePlayer.applyAttack(message);
   }
 
   private handleGuestPickup(message: PickupMessage, _peerId: string): void {

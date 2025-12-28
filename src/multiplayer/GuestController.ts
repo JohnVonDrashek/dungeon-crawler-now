@@ -6,6 +6,7 @@ import {
   MessageType,
   SyncMessage,
   PlayerPosMessage,
+  PlayerAttackMessage,
   EnemyUpdateMessage,
   HostStateMessage,
   InventoryUpdateMessage,
@@ -85,6 +86,9 @@ export class GuestController {
       case MessageType.SCENE_CHANGE:
         this.handleSceneChange(message as SceneChangeMessage);
         break;
+      case MessageType.PLAYER_ATTACK:
+        this.handleHostAttack(message as PlayerAttackMessage);
+        break;
     }
   }
 
@@ -92,6 +96,31 @@ export class GuestController {
     if (this.hostPlayer) {
       this.hostPlayer.applyPositionUpdate(message);
     }
+  }
+
+  private handleHostAttack(message: PlayerAttackMessage): void {
+    // Render visual projectile for host's attack
+    if (!this.hostPlayer) return;
+
+    const angle = message.angle ?? 0;
+    const projectile = this.scene.add.sprite(message.x, message.y, 'projectile_wand');
+    projectile.setDepth(8);
+    projectile.setRotation(angle);
+
+    // Animate projectile moving in direction
+    const speed = 300;
+    const duration = 500;
+    this.scene.tweens.add({
+      targets: projectile,
+      x: message.x + Math.cos(angle) * speed,
+      y: message.y + Math.sin(angle) * speed,
+      alpha: 0,
+      duration: duration,
+      onComplete: () => projectile.destroy(),
+    });
+
+    // Visual feedback on host player
+    this.hostPlayer.applyAttack(message);
   }
 
   private handleEnemyUpdate(message: EnemyUpdateMessage): void {
