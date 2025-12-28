@@ -22,7 +22,7 @@ import { VisualEffectsManager } from '../systems/VisualEffectsManager';
 import { RoomDecorationManager } from '../systems/RoomDecorationManager';
 import { progressionManager } from '../systems/ProgressionSystem';
 import { SinWorld, getWorldConfig } from '../config/WorldConfig';
-import { NPC, createLostSoulData, createWarningSpirit } from '../entities/NPC';
+import { DungeonNPCManager } from '../systems/DungeonNPCManager';
 import { hasWangTileset, getWangMapping, getWangTileFrame, getSimpleCornerValues } from '../systems/WangTileSystem';
 import { BaseScene } from './BaseScene';
 import { AudioSystem } from '../systems/AudioSystem';
@@ -72,8 +72,7 @@ export class GameScene extends BaseScene {
   private chests!: Phaser.Physics.Arcade.Group;
   private shrines!: Phaser.Physics.Arcade.Group;
   private lorePrompt!: Phaser.GameObjects.Text;
-  private dungeonNPCs: NPC[] = [];
-  private nearbyNPC: NPC | null = null;
+  private dungeonNPCManager!: DungeonNPCManager;
   private debugMenuUI!: DebugMenuUI;
   private floor: number = 1;
   private currentWorld: SinWorld | null = null;
@@ -272,8 +271,12 @@ export class GameScene extends BaseScene {
     this.gameHUD = new GameHUD(this, this.player);
     this.gameHUD.create();
 
-    // Add NPCs to dungeon
-    this.spawnDungeonNPCs();
+    // Create and initialize DungeonNPCManager
+    this.dungeonNPCManager = new DungeonNPCManager(
+      this, this.player, this.dungeon, this.dialogueUI, this.currentWorld, this.floor
+    );
+    this.dungeonNPCManager.setLorePrompt(this.lorePrompt);
+    this.dungeonNPCManager.spawnDungeonNPCs();
 
     // Setup player attack after UI is created (needs UI visibility check)
     this.playerAttackManager.setupPlayerAttack(this.inventoryUI, this.levelUpUI);
@@ -348,9 +351,9 @@ export class GameScene extends BaseScene {
     this.hazardSystem.update(delta);
 
     // Check NPC proximity
-    this.checkNPCProximity();
-    if (this.nearbyNPC) {
-      this.showNPCPrompt();
+    this.dungeonNPCManager.checkNPCProximity();
+    if (this.dungeonNPCManager.getNearbyNPC()) {
+      this.dungeonNPCManager.showNPCPrompt();
     }
 
     this.minimapUI.update(this.player.x, this.player.y);
@@ -452,92 +455,6 @@ export class GameScene extends BaseScene {
       default:
         return defaultFloor;
     }
-  }
-
-  // === NPC SYSTEM ===
-
-  private spawnDungeonNPCs(): void {
-    this.dungeonNPCs = [];
-
-    // Only spawn Lost Souls in world mode with world-specific lore
-    if (!this.currentWorld) return;
-
-    // Find shrine rooms to place Lost Souls
-    const shrineRooms = this.dungeon.rooms.filter(r => r.type === RoomType.SHRINE);
-
-    for (const room of shrineRooms) {
-      // Offset from center so NPC doesn't overlap shrine
-      const npcX = room.centerX * TILE_SIZE + TILE_SIZE * 2;
-      const npcY = room.centerY * TILE_SIZE + TILE_SIZE / 2;
-
-      const npcData = createLostSoulData(this.currentWorld);
-      const npc = new NPC(this, npcX, npcY, npcData);
-      this.dungeonNPCs.push(npc);
-    }
-
-    // On floor 2, add a warning spirit near the exit
-    if (this.floor === 2) {
-      const exitRoom = this.dungeon.rooms.find(r => r.type === RoomType.EXIT);
-      if (exitRoom) {
-        const warningX = exitRoom.centerX * TILE_SIZE - TILE_SIZE * 2;
-        const warningY = exitRoom.centerY * TILE_SIZE + TILE_SIZE / 2;
-
-        const warningData = createWarningSpirit(this.currentWorld);
-        const warningNPC = new NPC(this, warningX, warningY, warningData);
-        this.dungeonNPCs.push(warningNPC);
-      }
-    }
-  }
-
-  private checkNPCProximity(): void {
-    if (!this.player || this.dungeonNPCs.length === 0) {
-      this.nearbyNPC = null;
-      return;
-    }
-
-    const interactDistance = TILE_SIZE * 1.5;
-
-    for (const npc of this.dungeonNPCs) {
-      const dist = Phaser.Math.Distance.Between(
-        this.player.x, this.player.y,
-        npc.x, npc.y
-      );
-
-      if (dist < interactDistance) {
-        this.nearbyNPC = npc;
-        return;
-      }
-    }
-
-    this.nearbyNPC = null;
-  }
-
-  private showNPCPrompt(): void {
-    if (this.nearbyNPC && !this.dialogueUI.getIsVisible()) {
-      // Show interact hint at bottom of screen (like Hub)
-      const npcData = this.nearbyNPC.getData();
-      this.lorePrompt.setText(`[R] Talk to ${npcData.name}`);
-      this.lorePrompt.setPosition(this.cameras.main.width / 2, this.cameras.main.height - 40);
-      this.lorePrompt.setOrigin(0.5);
-      this.lorePrompt.setVisible(true);
-    }
-  }
-
-  private talkToNPC(): void {
-    if (!this.nearbyNPC || this.dialogueUI.getIsVisible()) return;
-
-    this.lorePrompt.setVisible(false);
-    // Hide the NPC's indicator while talking
-    this.nearbyNPC.hideIndicator();
-
-    const npcRef = this.nearbyNPC;
-    this.dialogueUI.show({
-      lines: this.nearbyNPC.getDialogue(),
-      onComplete: () => {
-        // Show the indicator again when dialogue is done
-        npcRef.showIndicator();
-      },
-    });
   }
 
   private exit!: Phaser.Physics.Arcade.Sprite;
@@ -1106,8 +1023,8 @@ export class GameScene extends BaseScene {
     this.input.keyboard.on('keydown-R', () => {
       if (this.inventoryUI.getIsVisible() || this.levelUpUI.getIsVisible() || this.settingsUI.getIsVisible()) return;
       if (this.dialogueUI.getIsVisible()) return;
-      if (this.nearbyNPC) {
-        this.talkToNPC();
+      if (this.dungeonNPCManager.getNearbyNPC()) {
+        this.dungeonNPCManager.talkToNPC();
       }
     });
 
