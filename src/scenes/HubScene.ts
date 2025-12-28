@@ -1167,4 +1167,23 @@ export class HubScene extends BaseScene {
       this.lightingSystem.update(delta);
     }
   }
+
+  shutdown(): void {
+    // Clean up audio
+    this.audioSystem?.stopMusic();
+
+    // Clean up keyboard listeners
+    this.input.keyboard?.off('keydown-R');
+    this.input.keyboard?.off('keydown-E');
+    this.input.keyboard?.off('keydown-Q');
+    this.input.keyboard?.off('keydown-ESC');
+    this.input.keyboard?.off('keydown-F1');
+    this.input.keyboard?.off('keydown');
+
+    // Clean up lighting
+    this.lightingSystem?.destroy();
+
+    // Clean up multiplayer
+    this.remotePlayer?.destroy();
+  }
 }

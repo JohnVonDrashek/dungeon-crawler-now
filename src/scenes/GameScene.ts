@@ -1121,12 +1121,45 @@ export class GameScene extends BaseScene {
   }
 
   shutdown(): void {
+    // Clean up UI managers
     this.gameHUD?.destroy();
     this.loreUIManager?.destroy();
+    this.debugMenuUI?.close();
+
+    // Clean up multiplayer
     this.hostController?.destroy();
     this.guestController?.destroy();
     this.hostController = null;
     this.guestController = null;
     this.playerSync = null;
+
+    // Stop audio
+    this.audioSystem?.stopMusic();
+
+    // Clean up event listeners
+    this.events.off('showDamageNumber');
+    this.events.off('shakeCamera');
+    this.events.off('requestEnemiesGroup');
+    this.events.off('playerDeath');
+    this.events.off('enemyDeath');
+    this.events.off('enemyAttack');
+    this.events.off('hazardDamage');
+    this.events.off('itemCollected');
+    this.events.off('inventoryFull');
+    this.events.off('playerLevelUp');
+    this.events.off('playerSlowed');
+    this.events.off('playerPulled');
+    this.events.off('damageReflected');
+    this.events.off('goldStolen');
+
+    // Clean up keyboard listeners
+    this.input.keyboard?.off('keydown-E');
+    this.input.keyboard?.off('keydown-ESC');
+    this.input.keyboard?.off('keydown-L');
+    this.input.keyboard?.off('keydown-Q');
+    this.input.keyboard?.off('keydown-R');
+
+    // Clean up lighting
+    this.lightingSystem?.destroy();
   }
 }

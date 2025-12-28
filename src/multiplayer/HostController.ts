@@ -14,6 +14,7 @@ import {
   PlayerHitMessage,
   PickupMessage,
   PlayerAttackMessage,
+  RoomActivatedMessage,
 } from './SyncMessages';
 import { RemotePlayer } from './RemotePlayer';
 import { Player } from '../entities/Player';
@@ -76,9 +77,12 @@ export class HostController {
     });
   }
 
+  private waitingOverlay: Phaser.GameObjects.Container | null = null;
+
   private setupPeerHandlers(): void {
     networkManager.onPeerJoin((peerId: string) => {
       console.log(`[HostController] Guest joined: ${peerId}`);
+      this.hideWaitingUI();
       this.createRemotePlayer();
       this.sendInitialState();
     });
@@ -86,7 +90,37 @@ export class HostController {
     networkManager.onPeerLeave((peerId: string) => {
       console.log(`[HostController] Guest left: ${peerId}`);
       this.removeRemotePlayer();
+      this.showWaitingUI();
     });
+  }
+
+  private showWaitingUI(): void {
+    if (this.waitingOverlay) return;
+
+    const width = this.scene.cameras.main.width;
+
+    this.waitingOverlay = this.scene.add.container(width / 2, 60);
+    this.waitingOverlay.setDepth(100);
+    this.waitingOverlay.setScrollFactor(0);
+
+    const bg = this.scene.add.rectangle(0, 0, 320, 50, 0x000000, 0.7);
+    bg.setStrokeStyle(2, 0xffaa00);
+
+    const text = this.scene.add.text(0, 0, 'Waiting for guest to reconnect...', {
+      fontSize: '14px',
+      fontFamily: 'Roboto Mono',
+      color: '#ffaa00',
+    });
+    text.setOrigin(0.5);
+
+    this.waitingOverlay.add([bg, text]);
+  }
+
+  private hideWaitingUI(): void {
+    if (this.waitingOverlay) {
+      this.waitingOverlay.destroy();
+      this.waitingOverlay = null;
+    }
   }
 
   private createRemotePlayer(): void {
@@ -186,6 +220,15 @@ export class HostController {
     // Update remote player interpolation
     if (this.remotePlayer) {
       this.remotePlayer.update();
+
+      // Set secondary target on all enemies so they can chase the guest too
+      const guestPos = { x: this.remotePlayer.x, y: this.remotePlayer.y };
+      this.enemies.getChildren().forEach((child) => {
+        const enemy = child as Enemy;
+        if (enemy.active) {
+          enemy.setSecondaryTarget(guestPos);
+        }
+      });
     }
 
     // Periodic enemy updates
@@ -230,14 +273,20 @@ export class HostController {
       const enemy = child as Enemy;
       if (!enemy.active) return;
 
-      const id = this.enemyIdMap.get(enemy);
-      if (!id) return;
+      // Register enemy if not already registered (handles enemies spawned after connection)
+      let id = this.enemyIdMap.get(enemy);
+      if (!id) {
+        id = this.registerEnemy(enemy);
+        console.log('[HostController] Registered new enemy:', id);
+      }
 
       enemyData.push({
         id,
         x: enemy.x,
         y: enemy.y,
         hp: enemy.hp,
+        maxHp: enemy.maxHp,
+        texture: enemy.texture.key,
         state: enemy.getAiState(),
         facing: 'south', // Would need to expose facing from Enemy class
       });
@@ -291,8 +340,20 @@ export class HostController {
     return this.remotePlayer;
   }
 
+  // Broadcast room activation to guest - teleports them to host
+  broadcastRoomActivated(roomId: number): void {
+    const message: RoomActivatedMessage = {
+      type: MessageType.ROOM_ACTIVATED,
+      roomId,
+      hostX: this.player.x,
+      hostY: this.player.y,
+    };
+    networkManager.broadcast(message);
+  }
+
   destroy(): void {
     this.removeRemotePlayer();
+    this.hideWaitingUI();
     this.enemyIdMap.clear();
   }
 }

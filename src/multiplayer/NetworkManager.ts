@@ -3,7 +3,7 @@
 import { joinRoom, Room, selfId } from 'trystero';
 import { SyncMessage } from './SyncMessages';
 
-export type ConnectionState = 'disconnected' | 'connecting' | 'waiting' | 'connected';
+export type ConnectionState = 'disconnected' | 'connecting' | 'waiting' | 'connected' | 'reconnecting';
 
 export class NetworkManager {
   private static instance: NetworkManager | null = null;
@@ -23,6 +23,13 @@ export class NetworkManager {
   private onPeerLeaveCallback: ((peerId: string) => void) | null = null;
   private messageListeners: ((message: SyncMessage, peerId: string) => void)[] = [];
   private onConnectionStateChangeCallback: ((state: ConnectionState) => void) | null = null;
+
+  // Reconnection state
+  private intentionalDisconnect: boolean = false;
+  private reconnectAttempts: number = 0;
+  private readonly MAX_RECONNECT_ATTEMPTS = 5;
+  private readonly RECONNECT_DELAY_MS = 2000;
+  private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 
   private constructor() {}
 
@@ -91,14 +98,97 @@ export class NetworkManager {
 
     this.room.onPeerLeave((peerId) => {
       this._isConnected = false;
-      this.setConnectionState(this._isHost ? 'waiting' : 'disconnected');
-      this.onPeerLeaveCallback?.(peerId);
+
+      // If this was an intentional disconnect, don't try to reconnect
+      if (this.intentionalDisconnect) {
+        this.setConnectionState('disconnected');
+        this.onPeerLeaveCallback?.(peerId);
+        return;
+      }
+
+      // Host waits for guest to reconnect, guest attempts to reconnect
+      if (this._isHost) {
+        console.log('[NetworkManager] Guest disconnected, waiting for reconnect...');
+        this.setConnectionState('waiting');
+        this.onPeerLeaveCallback?.(peerId);
+      } else {
+        console.log('[NetworkManager] Disconnected from host, attempting reconnect...');
+        this.attemptReconnect();
+      }
     });
+  }
+
+  private async attemptReconnect(): Promise<void> {
+    if (!this._roomCode || this.intentionalDisconnect) {
+      this.setConnectionState('disconnected');
+      return;
+    }
+
+    if (this.reconnectAttempts >= this.MAX_RECONNECT_ATTEMPTS) {
+      console.log('[NetworkManager] Max reconnect attempts reached, giving up');
+      this.setConnectionState('disconnected');
+      this.onPeerLeaveCallback?.('reconnect_failed');
+      return;
+    }
+
+    this.reconnectAttempts++;
+    this.setConnectionState('reconnecting');
+    console.log(`[NetworkManager] Reconnect attempt ${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS}`);
+
+    // Wait before attempting reconnect
+    await new Promise(resolve => setTimeout(resolve, this.RECONNECT_DELAY_MS));
+
+    // Check if we were intentionally disconnected while waiting
+    if (this.intentionalDisconnect) {
+      this.setConnectionState('disconnected');
+      return;
+    }
+
+    try {
+      // Leave old room if it exists
+      if (this.room) {
+        try {
+          this.room.leave();
+        } catch (e) {
+          // Ignore errors from leaving already-left room
+        }
+      }
+
+      // Rejoin the room
+      this.room = joinRoom({ appId: NetworkManager.APP_ID }, this._roomCode);
+      this._peerId = selfId;
+      this.setupRoomHandlers();
+
+      // Wait for host with timeout
+      const reconnectPromise = new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('Reconnect timeout'));
+        }, 10000);
+
+        this.room!.onPeerJoin((peerId) => {
+          clearTimeout(timeout);
+          this._isConnected = true;
+          this.reconnectAttempts = 0; // Reset on success
+          this.setConnectionState('connected');
+          console.log('[NetworkManager] Reconnected successfully!');
+          this.onPeerJoinCallback?.(peerId);
+          resolve();
+        });
+      });
+
+      await reconnectPromise;
+    } catch (error) {
+      console.log('[NetworkManager] Reconnect attempt failed:', error);
+      // Try again
+      this.attemptReconnect();
+    }
   }
 
   async hostGame(): Promise<string> {
     this._roomCode = this.generateRoomCode();
     this._isHost = true;
+    this.intentionalDisconnect = false;
+    this.reconnectAttempts = 0;
     this.setConnectionState('connecting');
 
     try {
@@ -124,6 +214,8 @@ export class NetworkManager {
   async joinGame(roomCode: string): Promise<void> {
     this._roomCode = roomCode.toUpperCase();
     this._isHost = false;
+    this.intentionalDisconnect = false;
+    this.reconnectAttempts = 0;
     this.setConnectionState('connecting');
 
     try {
@@ -185,9 +277,26 @@ export class NetworkManager {
     this.onConnectionStateChangeCallback = callback;
   }
 
+  offConnectionStateChange(): void {
+    this.onConnectionStateChangeCallback = null;
+  }
+
   disconnect(): void {
+    // Mark as intentional so reconnect logic doesn't trigger
+    this.intentionalDisconnect = true;
+
+    // Cancel any pending reconnect
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+
     if (this.room) {
-      this.room.leave();
+      try {
+        this.room.leave();
+      } catch (e) {
+        // Ignore errors from leaving already-left room
+      }
       this.room = null;
     }
     this.sendMessage = null;
@@ -196,6 +305,7 @@ export class NetworkManager {
     this._peerId = null;
     this._roomCode = null;
     this.messageListeners = [];
+    this.reconnectAttempts = 0;
     this.setConnectionState('disconnected');
   }
 

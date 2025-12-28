@@ -82,6 +82,7 @@ export class RemotePlayer extends Phaser.Physics.Arcade.Sprite {
 
   applyAttack(_message: PlayerAttackMessage): void {
     // Visual feedback for remote player attacking
+    if (!this.scene) return;
     this.scene.tweens.add({
       targets: this,
       alpha: 0.7,
@@ -101,11 +102,13 @@ export class RemotePlayer extends Phaser.Physics.Arcade.Sprite {
 
     // Visual feedback
     this.setTint(0xff0000);
-    this.scene.time.delayedCall(200, () => {
-      if (!this.isDead) {
-        this.setTint(0x88aaff);
-      }
-    });
+    if (this.scene) {
+      this.scene.time.delayedCall(200, () => {
+        if (!this.isDead) {
+          this.setTint(0x88aaff);
+        }
+      });
+    }
 
     if (this.hp <= 0) {
       this.die();

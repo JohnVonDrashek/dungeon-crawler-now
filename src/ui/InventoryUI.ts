@@ -26,12 +26,19 @@ export class InventoryUI {
   private readonly SLOTS_PER_ROW = 7;
   private readonly SLOT_GAP = 5;
 
+  // Event handler references for cleanup
+  private itemPickupHandler: (() => void) | null = null;
+  private equipmentChangedHandler: (() => void) | null = null;
+
   constructor(scene: Phaser.Scene, player: Player) {
     this.scene = scene;
     this.player = player;
 
-    scene.events.on('itemPickup', () => this.refresh());
-    scene.events.on('equipmentChanged', () => this.refresh());
+    // Store handler references for cleanup
+    this.itemPickupHandler = () => this.refresh();
+    this.equipmentChangedHandler = () => this.refresh();
+    scene.events.on('itemPickup', this.itemPickupHandler);
+    scene.events.on('equipmentChanged', this.equipmentChangedHandler);
   }
 
   show(): void {
@@ -639,5 +646,14 @@ export class InventoryUI {
 
   destroy(): void {
     this.hide();
+    // Clean up event listeners
+    if (this.itemPickupHandler) {
+      this.scene.events.off('itemPickup', this.itemPickupHandler);
+      this.itemPickupHandler = null;
+    }
+    if (this.equipmentChangedHandler) {
+      this.scene.events.off('equipmentChanged', this.equipmentChangedHandler);
+      this.equipmentChangedHandler = null;
+    }
   }
 }

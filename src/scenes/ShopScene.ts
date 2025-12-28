@@ -646,4 +646,19 @@ export class ShopScene extends BaseScene {
       });
     });
   }
+
+  shutdown(): void {
+    // Clean up audio
+    this.audioSystem?.stopMusic();
+
+    // Clean up keyboard listeners
+    this.input.keyboard?.off('keydown-E');
+    this.input.keyboard?.off('keydown-ESC');
+
+    // Clean up lighting
+    this.lightingSystem?.destroy();
+
+    // Clean up tweens (stops all infinite tweens)
+    this.tweens.killAll();
+  }
 }

@@ -386,7 +386,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     xp: number;
     xpToNext: number;
     hp: number;
-    maxHp: number;
+    baseMaxHp: number;
     baseAttack: number;
     baseDefense: number;
     baseSpeed: number;
@@ -398,7 +398,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
       xp: this.xp,
       xpToNext: this.xpToNextLevel,
       hp: this.hp,
-      maxHp: this.maxHp,
+      baseMaxHp: this.baseMaxHp,
       baseAttack: this.baseAttack,
       baseDefense: this.baseDefense,
       baseSpeed: this.baseSpeed,
@@ -412,7 +412,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     xp: number;
     xpToNext: number;
     hp: number;
-    maxHp: number;
+    baseMaxHp: number;
     baseAttack: number;
     baseDefense: number;
     baseSpeed: number;
@@ -422,7 +422,7 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     this.level = data.level;
     this.xp = data.xp;
     this.xpToNextLevel = data.xpToNext;
-    this.baseMaxHp = data.maxHp;
+    this.baseMaxHp = data.baseMaxHp;
     this.baseAttack = data.baseAttack;
     this.baseDefense = data.baseDefense;
     this.baseSpeed = data.baseSpeed;

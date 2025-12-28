@@ -11,17 +11,21 @@ import {
   HostStateMessage,
   InventoryUpdateMessage,
   RoomClearMessage,
+  RoomActivatedMessage,
   PlayerDiedMessage,
   PlayerReviveMessage,
   SceneChangeMessage,
 } from './SyncMessages';
 import { RemotePlayer } from './RemotePlayer';
 import { Player } from '../entities/Player';
+import { RoomManager } from '../systems/RoomManager';
 
 interface GuestEnemy {
   sprite: Phaser.Physics.Arcade.Sprite;
+  healthBar: Phaser.GameObjects.Container;
   id: string;
   hp: number;
+  maxHp: number;
 }
 
 export class GuestController {
@@ -29,16 +33,28 @@ export class GuestController {
   private player: Player;
   private hostPlayer: RemotePlayer | null = null;
   private guestEnemies: Map<string, GuestEnemy> = new Map();
+  private roomManager: RoomManager | null = null;
 
   private isSpectating: boolean = false;
   private spectateOverlay: Phaser.GameObjects.Container | null = null;
 
+  // Track last safe position (where host is or was)
+  private lastSafeX: number = 0;
+  private lastSafeY: number = 0;
+  private visitedRoomIds: Set<number> = new Set([0]); // Spawn room is always safe
+
   constructor(scene: Phaser.Scene, player: Player) {
     this.scene = scene;
     this.player = player;
+    this.lastSafeX = player.x;
+    this.lastSafeY = player.y;
 
     this.setupMessageHandlers();
     this.createHostPlayer();
+  }
+
+  setRoomManager(roomManager: RoomManager): void {
+    this.roomManager = roomManager;
   }
 
   private setupMessageHandlers(): void {
@@ -89,6 +105,9 @@ export class GuestController {
       case MessageType.PLAYER_ATTACK:
         this.handleHostAttack(message as PlayerAttackMessage);
         break;
+      case MessageType.ROOM_ACTIVATED:
+        this.handleRoomActivated(message as RoomActivatedMessage);
+        break;
     }
   }
 
@@ -124,6 +143,11 @@ export class GuestController {
   }
 
   private handleEnemyUpdate(message: EnemyUpdateMessage): void {
+    // Debug: log when receiving enemy updates
+    if (message.enemies.length > 0 && this.guestEnemies.size === 0) {
+      console.log('[GuestController] First enemy update received:', message.enemies.length, 'enemies');
+    }
+
     const seenIds = new Set<string>();
 
     for (const enemyData of message.enemies) {
@@ -132,19 +156,24 @@ export class GuestController {
       let guestEnemy = this.guestEnemies.get(enemyData.id);
 
       if (!guestEnemy) {
-        // Create new enemy sprite
+        // Create new enemy sprite with correct texture
         const sprite = this.scene.physics.add.sprite(
           enemyData.x,
           enemyData.y,
-          'enemy_basic'
+          enemyData.texture
         );
         sprite.setDepth(5);
         sprite.setPipeline('Light2D');
 
+        // Create health bar
+        const healthBar = this.createHealthBar(enemyData.x, enemyData.y);
+
         guestEnemy = {
           sprite,
+          healthBar,
           id: enemyData.id,
           hp: enemyData.hp,
+          maxHp: enemyData.maxHp,
         };
         this.guestEnemies.set(enemyData.id, guestEnemy);
       }
@@ -161,10 +190,15 @@ export class GuestController {
         0.3
       );
       guestEnemy.hp = enemyData.hp;
+      guestEnemy.maxHp = enemyData.maxHp;
 
-      // Visual feedback for low HP
+      // Update health bar position and width
+      this.updateHealthBar(guestEnemy);
+
+      // Visual feedback for dead enemies
       if (enemyData.hp <= 0) {
         guestEnemy.sprite.setAlpha(0);
+        guestEnemy.healthBar.setVisible(false);
       }
     }
 
@@ -172,8 +206,37 @@ export class GuestController {
     for (const [id, guestEnemy] of this.guestEnemies.entries()) {
       if (!seenIds.has(id)) {
         guestEnemy.sprite.destroy();
+        guestEnemy.healthBar.destroy();
         this.guestEnemies.delete(id);
       }
+    }
+  }
+
+  private createHealthBar(x: number, y: number): Phaser.GameObjects.Container {
+    const container = this.scene.add.container(x, y - 15);
+    container.setDepth(50);
+
+    const bg = this.scene.add.rectangle(0, 0, 20, 4, 0x333333);
+    const bar = this.scene.add.rectangle(-10, 0, 20, 4, 0x22cc22);
+    bar.setOrigin(0, 0.5);
+    bar.setName('bar');
+
+    container.add([bg, bar]);
+    return container;
+  }
+
+  private updateHealthBar(guestEnemy: GuestEnemy): void {
+    guestEnemy.healthBar.setPosition(guestEnemy.sprite.x, guestEnemy.sprite.y - 15);
+
+    const bar = guestEnemy.healthBar.getByName('bar') as Phaser.GameObjects.Rectangle;
+    if (bar) {
+      const percent = guestEnemy.hp / guestEnemy.maxHp;
+      bar.width = 20 * Math.max(0, percent);
+
+      // Color based on health
+      if (percent > 0.5) bar.setFillStyle(0x22cc22);
+      else if (percent > 0.25) bar.setFillStyle(0xcccc22);
+      else bar.setFillStyle(0xcc2222);
     }
   }
 
@@ -219,8 +282,105 @@ export class GuestController {
     this.scene.scene.start(message.sceneName, message.data);
   }
 
+  private handleRoomActivated(message: RoomActivatedMessage): void {
+    // Mark the room as visited by host
+    this.visitedRoomIds.add(message.roomId);
+    this.lastSafeX = message.hostX;
+    this.lastSafeY = message.hostY;
+
+    // Teleport guest player to host position when room is activated
+    this.player.setPosition(message.hostX + 20, message.hostY);
+    this.player.setVelocity(0, 0);
+
+    // Visual feedback for teleport
+    const flash = this.scene.add.circle(this.player.x, this.player.y, 30, 0x88aaff, 0.6);
+    flash.setDepth(50);
+    this.scene.tweens.add({
+      targets: flash,
+      alpha: 0,
+      scale: 2,
+      duration: 300,
+      onComplete: () => flash.destroy(),
+    });
+  }
+
+  private reconnectOverlay: Phaser.GameObjects.Container | null = null;
+
   private onHostDisconnected(): void {
-    // Show disconnect message and return to menu
+    // Check if we're reconnecting or truly disconnected
+    const state = networkManager.connectionState;
+
+    if (state === 'reconnecting') {
+      this.showReconnectingUI();
+      return;
+    }
+
+    // If state is 'disconnected', show final disconnect message
+    this.showDisconnectedUI();
+  }
+
+  private showReconnectingUI(): void {
+    if (this.reconnectOverlay) return; // Already showing
+
+    const width = this.scene.cameras.main.width;
+    const height = this.scene.cameras.main.height;
+
+    this.reconnectOverlay = this.scene.add.container(width / 2, height / 2);
+    this.reconnectOverlay.setDepth(1000);
+    this.reconnectOverlay.setScrollFactor(0);
+
+    const bg = this.scene.add.rectangle(0, 0, width, height, 0x000000, 0.7);
+
+    const text = this.scene.add.text(0, -20, 'Connection lost...', {
+      fontSize: '24px',
+      fontFamily: 'Cinzel',
+      color: '#ffaa00',
+    });
+    text.setOrigin(0.5);
+
+    const subtext = this.scene.add.text(0, 20, 'Attempting to reconnect', {
+      fontSize: '14px',
+      fontFamily: 'Roboto Mono',
+      color: '#888888',
+    });
+    subtext.setOrigin(0.5);
+
+    this.reconnectOverlay.add([bg, text, subtext]);
+
+    // Animate dots
+    let dots = 0;
+    const dotTimer = this.scene.time.addEvent({
+      delay: 500,
+      loop: true,
+      callback: () => {
+        dots = (dots + 1) % 4;
+        subtext.setText('Attempting to reconnect' + '.'.repeat(dots));
+      },
+    });
+
+    // Listen for connection state changes
+    networkManager.onConnectionStateChange((state) => {
+      if (state === 'connected') {
+        dotTimer.destroy();
+        this.hideReconnectUI();
+      } else if (state === 'disconnected') {
+        dotTimer.destroy();
+        this.hideReconnectUI();
+        this.showDisconnectedUI();
+      }
+    });
+  }
+
+  private hideReconnectUI(): void {
+    if (this.reconnectOverlay) {
+      this.reconnectOverlay.destroy();
+      this.reconnectOverlay = null;
+    }
+  }
+
+  private showDisconnectedUI(): void {
+    this.hideReconnectUI();
+
     const width = this.scene.cameras.main.width;
     const height = this.scene.cameras.main.height;
 
@@ -292,6 +452,28 @@ export class GuestController {
 
     this.hostPlayer?.update();
 
+    // Update last safe position when host moves
+    if (this.hostPlayer) {
+      this.lastSafeX = this.hostPlayer.x;
+      this.lastSafeY = this.hostPlayer.y;
+    }
+
+    // Room-based tethering: prevent guest from entering rooms host hasn't visited yet
+    if (this.roomManager && !this.isSpectating) {
+      const guestRoom = this.roomManager.getRoomAtPosition(this.player.x, this.player.y);
+
+      if (guestRoom) {
+        // Guest can only be in rooms that the host has visited
+        const isRoomSafe = this.visitedRoomIds.has(guestRoom.id);
+
+        if (!isRoomSafe) {
+          // Teleport back to last safe position (near host)
+          this.player.setPosition(this.lastSafeX + 20, this.lastSafeY);
+          this.player.setVelocity(0, 0);
+        }
+      }
+    }
+
     // Interpolate guest enemy positions
     // Animation updates handled in handleEnemyUpdate
   }
@@ -312,12 +494,18 @@ export class GuestController {
 
     for (const guestEnemy of this.guestEnemies.values()) {
       guestEnemy.sprite.destroy();
+      guestEnemy.healthBar.destroy();
     }
     this.guestEnemies.clear();
 
     if (this.spectateOverlay) {
       this.spectateOverlay.destroy();
       this.spectateOverlay = null;
+    }
+
+    if (this.reconnectOverlay) {
+      this.reconnectOverlay.destroy();
+      this.reconnectOverlay = null;
     }
   }
 

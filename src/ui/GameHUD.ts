@@ -36,6 +36,9 @@ export class GameHUD {
   private weaponIcon!: Phaser.GameObjects.Sprite;
   private weaponText!: Phaser.GameObjects.Text;
 
+  // Event handler reference for cleanup
+  private equipmentChangedHandler: (() => void) | null = null;
+
   // Panel dimensions
   private readonly panelWidth = 200;
   private readonly barWidth = 180; // panelWidth - 20
@@ -49,10 +52,11 @@ export class GameHUD {
     this.createMainHUD();
     this.createWeaponHUD();
 
-    // Listen for equipment changes
-    this.scene.events.on('equipmentChanged', () => {
+    // Listen for equipment changes (store reference for cleanup)
+    this.equipmentChangedHandler = () => {
       this.updateWeaponHUD();
-    });
+    };
+    this.scene.events.on('equipmentChanged', this.equipmentChangedHandler);
   }
 
   private createMainHUD(): void {
@@ -308,7 +312,11 @@ export class GameHUD {
   }
 
   destroy(): void {
-    this.scene.events.off('equipmentChanged');
+    // Clean up event listener properly
+    if (this.equipmentChangedHandler) {
+      this.scene.events.off('equipmentChanged', this.equipmentChangedHandler);
+      this.equipmentChangedHandler = null;
+    }
     this.hudContainer.destroy();
     this.weaponHUD.destroy();
   }

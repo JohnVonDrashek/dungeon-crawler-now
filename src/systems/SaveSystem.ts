@@ -11,11 +11,12 @@ interface SaveData {
     xp: number;
     xpToNext: number;
     hp: number;
-    maxHp: number;
+    baseMaxHp: number;
     baseAttack: number;
     baseDefense: number;
     baseSpeed: number;
     statPoints: number;
+    gold: number;
   };
   inventory: {
     items: Item[];
@@ -44,11 +45,12 @@ export class SaveSystem {
       xp: number;
       xpToNext: number;
       hp: number;
-      maxHp: number;
+      baseMaxHp: number;
       baseAttack: number;
       baseDefense: number;
       baseSpeed: number;
       statPoints: number;
+      gold: number;
     },
     inventory: InventorySystem
   ): boolean {

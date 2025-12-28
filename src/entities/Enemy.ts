@@ -19,6 +19,7 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
 
   private aiState: EnemyState = EnemyState.IDLE;
   protected target: Player | null = null;
+  protected secondaryTarget: { x: number; y: number } | null = null;
   private attackCooldown: number = 0;
   private readonly ATTACK_COOLDOWN_MS = 1000;
   private readonly CHASE_RANGE = TILE_SIZE * 8;
@@ -136,6 +137,28 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.target = player;
   }
 
+  setSecondaryTarget(target: { x: number; y: number } | null): void {
+    this.secondaryTarget = target;
+  }
+
+  // Get the closest target position (primary or secondary)
+  protected getClosestTargetPos(): { x: number; y: number } | null {
+    if (!this.target && !this.secondaryTarget) return null;
+    if (!this.target) return this.secondaryTarget;
+    if (!this.secondaryTarget) return { x: this.target.x, y: this.target.y };
+
+    const distToPrimary = Phaser.Math.Distance.Between(
+      this.x, this.y, this.target.x, this.target.y
+    );
+    const distToSecondary = Phaser.Math.Distance.Between(
+      this.x, this.y, this.secondaryTarget.x, this.secondaryTarget.y
+    );
+
+    return distToPrimary <= distToSecondary
+      ? { x: this.target.x, y: this.target.y }
+      : this.secondaryTarget;
+  }
+
   update(_time: number, delta: number): void {
     if (!this.active || !this.target) return;
 
@@ -157,13 +180,14 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   }
 
   private updateState(): void {
-    if (!this.target) return;
+    const targetPos = this.getClosestTargetPos();
+    if (!targetPos) return;
 
     const distanceToTarget = Phaser.Math.Distance.Between(
       this.x,
       this.y,
-      this.target.x,
-      this.target.y
+      targetPos.x,
+      targetPos.y
     );
 
     // Check if should retreat (low HP)
@@ -208,13 +232,14 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   }
 
   private chaseTarget(): void {
-    if (!this.target) return;
+    const targetPos = this.getClosestTargetPos();
+    if (!targetPos) return;
 
     const angle = Phaser.Math.Angle.Between(
       this.x,
       this.y,
-      this.target.x,
-      this.target.y
+      targetPos.x,
+      targetPos.y
     );
 
     this.setVelocity(
@@ -252,11 +277,12 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
   }
 
   private retreatFromTarget(): void {
-    if (!this.target) return;
+    const targetPos = this.getClosestTargetPos();
+    if (!targetPos) return;
 
     const angle = Phaser.Math.Angle.Between(
-      this.target.x,
-      this.target.y,
+      targetPos.x,
+      targetPos.y,
       this.x,
       this.y
     );

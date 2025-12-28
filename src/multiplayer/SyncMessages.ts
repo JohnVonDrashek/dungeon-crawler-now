@@ -9,6 +9,7 @@ export enum MessageType {
   LOOT_SPAWN = 'LOOT_SPAWN',
   LOOT_TAKEN = 'LOOT_TAKEN',
   ROOM_CLEAR = 'ROOM_CLEAR',
+  ROOM_ACTIVATED = 'ROOM_ACTIVATED',
   PLAYER_DIED = 'PLAYER_DIED',
   PLAYER_REVIVE = 'PLAYER_REVIVE',
   INVENTORY_UPDATE = 'INVENTORY_UPDATE',
@@ -65,6 +66,8 @@ export interface EnemyUpdateMessage {
     x: number;
     y: number;
     hp: number;
+    maxHp: number;
+    texture: string;
     state: string;
     facing: string;
   }>;
@@ -101,6 +104,13 @@ export interface RoomDataMessage {
 export interface RoomClearMessage {
   type: MessageType.ROOM_CLEAR;
   roomIndex: number;
+}
+
+export interface RoomActivatedMessage {
+  type: MessageType.ROOM_ACTIVATED;
+  roomId: number;
+  hostX: number;
+  hostY: number;
 }
 
 export interface PlayerDiedMessage {
@@ -162,6 +172,7 @@ export type SyncMessage =
   | LootTakenMessage
   | RoomDataMessage
   | RoomClearMessage
+  | RoomActivatedMessage
   | PlayerDiedMessage
   | PlayerReviveMessage
   | InventoryUpdateMessage

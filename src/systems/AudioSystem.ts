@@ -22,6 +22,7 @@ export class AudioSystem {
   // Music system
   private droneOscillator: OscillatorNode | null = null;
   private droneGain: GainNode | null = null;
+  private droneLfo: OscillatorNode | null = null;
   private melodyOscillator: OscillatorNode | null = null;
   private melodyGain: GainNode | null = null;
   private isPlayingMusic: boolean = false;
@@ -231,6 +232,12 @@ export class AudioSystem {
       this.droneGain = null;
     }
 
+    // Stop LFO oscillator
+    if (this.droneLfo) {
+      this.droneLfo.stop();
+      this.droneLfo = null;
+    }
+
     // Fade out melody
     if (this.melodyGain && this.melodyOscillator) {
       const now = this.audioContext.currentTime;
@@ -284,17 +291,23 @@ export class AudioSystem {
   private addDroneWobble(): void {
     if (!this.audioContext || !this.droneGain) return;
 
+    // Stop any existing LFO
+    if (this.droneLfo) {
+      this.droneLfo.stop();
+      this.droneLfo = null;
+    }
+
     // Create LFO for subtle volume modulation
-    const lfo = this.audioContext.createOscillator();
+    this.droneLfo = this.audioContext.createOscillator();
     const lfoGain = this.audioContext.createGain();
 
-    lfo.type = 'sine';
-    lfo.frequency.value = 0.1; // Very slow wobble
+    this.droneLfo.type = 'sine';
+    this.droneLfo.frequency.value = 0.1; // Very slow wobble
     lfoGain.gain.value = 0.02; // Subtle amount
 
-    lfo.connect(lfoGain);
+    this.droneLfo.connect(lfoGain);
     lfoGain.connect(this.droneGain.gain);
-    lfo.start();
+    this.droneLfo.start();
   }
 
   private scheduleNextNote(): void {

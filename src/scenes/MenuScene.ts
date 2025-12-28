@@ -697,13 +697,18 @@ export class MenuScene extends Phaser.Scene {
 
     // Host the game
     networkManager.hostGame().then((code) => {
+      // Check if scene/status still exists (scene may have been destroyed)
+      if (!status.scene) return;
       status.setText('Waiting for player...');
       codeDisplay.setText(code);
 
       // Listen for peer join
       networkManager.onPeerJoin(() => {
+        // Check if scene/status still exists
+        if (!status.scene) return;
         status.setText('Player connected!');
         this.time.delayedCall(500, () => {
+          if (!container.scene) return;
           container.destroy();
           overlay.destroy();
           this.cameras.main.fade(800, 0, 0, 0, false, (_cam: Phaser.Cameras.Scene2D.Camera, progress: number) => {
@@ -714,6 +719,8 @@ export class MenuScene extends Phaser.Scene {
         });
       });
     }).catch(() => {
+      // Check if scene/status still exists
+      if (!status.scene) return;
       status.setText('Failed to create room');
       status.setColor('#ff4444');
     });
@@ -812,9 +819,12 @@ export class MenuScene extends Phaser.Scene {
           this.input.keyboard?.off('keydown', handleKeydown);
 
           networkManager.joinGame(enteredCode).then(() => {
+            // Check if scene/status still exists (scene may have been destroyed)
+            if (!status.scene) return;
             status.setText('Connected!');
             status.setColor('#44ff44');
             this.time.delayedCall(500, () => {
+              if (!container.scene) return;
               container.destroy();
               overlay.destroy();
               this.cameras.main.fade(800, 0, 0, 0, false, (_cam: Phaser.Cameras.Scene2D.Camera, progress: number) => {
@@ -824,6 +834,8 @@ export class MenuScene extends Phaser.Scene {
               });
             });
           }).catch((error: Error) => {
+            // Check if scene/status still exists (scene may have been destroyed)
+            if (!status.scene) return;
             status.setText(error.message === 'Connection timeout' ? 'Connection timeout' : 'Failed to connect');
             status.setColor('#ff4444');
             enteredCode = '';
@@ -866,5 +878,13 @@ export class MenuScene extends Phaser.Scene {
         }
       }
     });
+  }
+
+  shutdown(): void {
+    // Clean up all infinite tweens (ember particles, wisps, etc.)
+    this.tweens.killAll();
+
+    // Clean up keyboard listeners if any were added
+    this.input.keyboard?.removeAllListeners();
   }
 }
