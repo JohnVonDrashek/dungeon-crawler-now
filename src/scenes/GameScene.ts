@@ -141,21 +141,6 @@ export class GameScene extends BaseScene {
       this.saveGame();
     }
 
-    // Initialize multiplayer if connected
-    if (networkManager.isMultiplayer) {
-      this.playerSync = new PlayerSync(this.player);
-
-      if (networkManager.isHost) {
-        this.hostController = new HostController(
-          this,
-          this.player,
-          this.enemies
-        );
-      } else {
-        this.guestController = new GuestController(this, this.player);
-      }
-    }
-
     // Create special room object groups (must be before addRoomDecorations)
     this.chests = this.physics.add.group();
     this.shrines = this.physics.add.group();
@@ -194,6 +179,21 @@ export class GameScene extends BaseScene {
       this, this.player, this.roomManager, this.audioSystem, this.enemyProjectiles, this.floor, this.currentWorld
     );
     this.enemySpawnManager.create();
+
+    // Initialize multiplayer if connected (after enemySpawnManager exists)
+    if (networkManager.isMultiplayer) {
+      this.playerSync = new PlayerSync(this.player);
+
+      if (networkManager.isHost) {
+        this.hostController = new HostController(
+          this,
+          this.player,
+          this.enemies
+        );
+      } else {
+        this.guestController = new GuestController(this, this.player);
+      }
+    }
 
     // Create hazard system
     this.hazardSystem = new HazardSystem(this, this.player, this.floor);
