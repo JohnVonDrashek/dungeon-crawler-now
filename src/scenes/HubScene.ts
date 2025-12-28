@@ -11,6 +11,10 @@ import { getSimpleCornerValues, getWangTileFrame, getWangMapping } from '../syst
 import { progressionManager } from '../systems/ProgressionSystem';
 import { ShopUI } from '../ui/ShopUI';
 import { NPC, HUB_NPCS } from '../entities/NPC';
+import { networkManager } from '../multiplayer/NetworkManager';
+import { PlayerSync } from '../multiplayer/PlayerSync';
+import { RemotePlayer } from '../multiplayer/RemotePlayer';
+import { MessageType, PlayerPosMessage } from '../multiplayer/SyncMessages';
 
 interface PortalData {
   world: SinWorld;
@@ -37,6 +41,10 @@ export class HubScene extends BaseScene {
   private nearbyInteractable: 'fountain' | 'shop' | 'victory' | 'chronicler' | 'mysterious' | SinWorld | null = null;
   private victoryPortal: { sprite: Phaser.GameObjects.Sprite; glow: Phaser.GameObjects.Arc } | null = null;
   private hubNPCs: NPC[] = [];
+
+  // Multiplayer
+  private playerSync: PlayerSync | null = null;
+  private remotePlayer: RemotePlayer | null = null;
 
   // Hub dimensions (in tiles)
   private readonly HUB_WIDTH = 25;
@@ -91,6 +99,26 @@ export class HubScene extends BaseScene {
       this.player.restoreFromSave(savedData.player);
       SaveSystem.restoreInventory(this.player.inventory, savedData.inventory);
       this.player.recalculateStats();
+    }
+
+    // Initialize multiplayer if connected
+    if (networkManager.isMultiplayer) {
+      this.playerSync = new PlayerSync(this.player);
+
+      // Create remote player for the other player
+      this.remotePlayer = new RemotePlayer(
+        this,
+        spawnX + 30,
+        spawnY,
+        !networkManager.isHost // helper flag
+      );
+
+      // Listen for position updates
+      networkManager.onMessage((message, _peerId) => {
+        if (message.type === MessageType.PLAYER_POS && this.remotePlayer) {
+          this.remotePlayer.applyPositionUpdate(message as PlayerPosMessage);
+        }
+      });
     }
 
     // Set up camera
@@ -1104,6 +1132,10 @@ export class HubScene extends BaseScene {
         this.lightingSystem.updatePlayerTorch(this.player.x, this.player.y);
       }
     }
+
+    // Multiplayer sync
+    this.playerSync?.update();
+    this.remotePlayer?.update();
 
     // Update lighting system
     if (this.lightingSystem) {
