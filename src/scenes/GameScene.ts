@@ -26,6 +26,10 @@ import { LightingSystem } from '../systems/LightingSystem';
 import { InventoryUI } from '../ui/InventoryUI';
 import { SettingsUI } from '../ui/SettingsUI';
 import { DialogueUI } from '../ui/DialogueUI';
+import { networkManager } from '../multiplayer/NetworkManager';
+import { HostController } from '../multiplayer/HostController';
+import { GuestController } from '../multiplayer/GuestController';
+import { PlayerSync } from '../multiplayer/PlayerSync';
 
 export class GameScene extends BaseScene {
   // Type narrowing for inherited properties (guaranteed non-null in this scene)
@@ -69,6 +73,11 @@ export class GameScene extends BaseScene {
   private enemiesKilled: number = 0;
   private itemsCollected: number = 0;
   private readonly FINAL_FLOOR = 20;
+
+  // Multiplayer
+  private hostController: HostController | null = null;
+  private guestController: GuestController | null = null;
+  private playerSync: PlayerSync | null = null;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -130,6 +139,21 @@ export class GameScene extends BaseScene {
       this.registry.remove('shopData');
       // Save progress after shop
       this.saveGame();
+    }
+
+    // Initialize multiplayer if connected
+    if (networkManager.isMultiplayer) {
+      this.playerSync = new PlayerSync(this.player);
+
+      if (networkManager.isHost) {
+        this.hostController = new HostController(
+          this,
+          this.player,
+          this.enemies
+        );
+      } else {
+        this.guestController = new GuestController(this, this.player);
+      }
     }
 
     // Create special room object groups (must be before addRoomDecorations)
@@ -209,6 +233,11 @@ export class GameScene extends BaseScene {
   update(time: number, delta: number): void {
     if (this.inventoryUI.getIsVisible() || this.levelUpUI.getIsVisible() || this.settingsUI.getIsVisible()) return;
     if (this.debugMenuVisible) return;
+
+    // Multiplayer sync
+    this.playerSync?.update();
+    this.hostController?.update(delta);
+    this.guestController?.update();
 
     // Reset speed modifier each frame (will be reapplied by SlothEnemy if in range)
     this.player.resetSpeedModifier();
@@ -2413,5 +2442,13 @@ export class GameScene extends BaseScene {
 
     this.player.restoreFromSave(savedData.player);
     SaveSystem.restoreInventory(this.player.inventory, savedData.inventory);
+  }
+
+  shutdown(): void {
+    this.hostController?.destroy();
+    this.guestController?.destroy();
+    this.hostController = null;
+    this.guestController = null;
+    this.playerSync = null;
   }
 }

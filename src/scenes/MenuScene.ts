@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { SaveSystem } from '../systems/SaveSystem';
 import { SettingsUI } from '../ui/SettingsUI';
 import { getWorldConfig, SinWorld } from '../config/WorldConfig';
+import { networkManager } from '../multiplayer/NetworkManager';
 
 export class MenuScene extends Phaser.Scene {
   private settingsUI!: SettingsUI;
@@ -455,6 +456,20 @@ export class MenuScene extends Phaser.Scene {
     this.createButton(width / 2, nextButtonY, 'Settings', () => {
       this.settingsUI.show();
     });
+
+    nextButtonY += buttonSpacing;
+
+    // Host Co-op button
+    this.createButton(width / 2, nextButtonY, 'Host Co-op', () => {
+      this.showHostingUI();
+    });
+
+    nextButtonY += buttonSpacing;
+
+    // Join Co-op button
+    this.createButton(width / 2, nextButtonY, 'Join Co-op', () => {
+      this.showJoinUI();
+    });
   }
 
   private createButton(x: number, y: number, text: string, callback: () => void): Phaser.GameObjects.Container {
@@ -621,6 +636,216 @@ export class MenuScene extends Phaser.Scene {
     graphics.lineTo(width/2, height/2);
     graphics.lineTo(width/2, height/2 - size);
     graphics.strokePath();
+  }
+
+  private showHostingUI(): void {
+    const width = this.cameras.main.width;
+    const height = this.cameras.main.height;
+
+    // Overlay background
+    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.8);
+    overlay.setDepth(100);
+    overlay.setInteractive();
+
+    // Container for UI elements
+    const container = this.add.container(width / 2, height / 2);
+    container.setDepth(101);
+
+    // Title
+    const title = this.add.text(0, -80, 'HOST CO-OP', {
+      fontSize: '24px',
+      fontFamily: 'Cinzel, Georgia, serif',
+      color: '#ff6600',
+    });
+    title.setOrigin(0.5);
+
+    // Status text
+    const status = this.add.text(0, -30, 'Creating room...', {
+      fontSize: '14px',
+      fontFamily: 'Roboto Mono, Courier New, monospace',
+      color: '#888888',
+    });
+    status.setOrigin(0.5);
+
+    // Room code display (initially empty)
+    const codeDisplay = this.add.text(0, 20, '', {
+      fontSize: '36px',
+      fontFamily: 'Roboto Mono, Courier New, monospace',
+      color: '#ffffff',
+      letterSpacing: 8,
+    });
+    codeDisplay.setOrigin(0.5);
+
+    // Cancel button
+    const cancelBtn = this.add.text(0, 90, '[ CANCEL ]', {
+      fontSize: '14px',
+      fontFamily: 'Roboto Mono, Courier New, monospace',
+      color: '#666666',
+    });
+    cancelBtn.setOrigin(0.5);
+    cancelBtn.setInteractive({ useHandCursor: true });
+
+    cancelBtn.on('pointerover', () => cancelBtn.setColor('#ff4444'));
+    cancelBtn.on('pointerout', () => cancelBtn.setColor('#666666'));
+    cancelBtn.on('pointerdown', () => {
+      networkManager.disconnect();
+      container.destroy();
+      overlay.destroy();
+    });
+
+    container.add([title, status, codeDisplay, cancelBtn]);
+
+    // Host the game
+    networkManager.hostGame().then((code) => {
+      status.setText('Waiting for player...');
+      codeDisplay.setText(code);
+
+      // Listen for peer join
+      networkManager.onPeerJoin(() => {
+        status.setText('Player connected!');
+        this.time.delayedCall(500, () => {
+          container.destroy();
+          overlay.destroy();
+          this.cameras.main.fade(800, 0, 0, 0, false, (_cam: Phaser.Cameras.Scene2D.Camera, progress: number) => {
+            if (progress === 1) {
+              this.scene.start('HubScene');
+            }
+          });
+        });
+      });
+    }).catch(() => {
+      status.setText('Failed to create room');
+      status.setColor('#ff4444');
+    });
+  }
+
+  private showJoinUI(): void {
+    const width = this.cameras.main.width;
+    const height = this.cameras.main.height;
+
+    // Overlay background
+    const overlay = this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.8);
+    overlay.setDepth(100);
+    overlay.setInteractive();
+
+    // Container for UI elements
+    const container = this.add.container(width / 2, height / 2);
+    container.setDepth(101);
+
+    // Title
+    const title = this.add.text(0, -80, 'JOIN CO-OP', {
+      fontSize: '24px',
+      fontFamily: 'Cinzel, Georgia, serif',
+      color: '#ff6600',
+    });
+    title.setOrigin(0.5);
+
+    // Instructions
+    const instructions = this.add.text(0, -30, 'Enter room code:', {
+      fontSize: '14px',
+      fontFamily: 'Roboto Mono, Courier New, monospace',
+      color: '#888888',
+    });
+    instructions.setOrigin(0.5);
+
+    // Code input display
+    let enteredCode = '';
+    const codeInput = this.add.text(0, 20, '______', {
+      fontSize: '36px',
+      fontFamily: 'Roboto Mono, Courier New, monospace',
+      color: '#ffffff',
+      letterSpacing: 8,
+    });
+    codeInput.setOrigin(0.5);
+
+    // Status text (for errors/connecting)
+    const status = this.add.text(0, 60, '', {
+      fontSize: '12px',
+      fontFamily: 'Roboto Mono, Courier New, monospace',
+      color: '#888888',
+    });
+    status.setOrigin(0.5);
+
+    // Cancel button
+    const cancelBtn = this.add.text(0, 100, '[ CANCEL ]', {
+      fontSize: '14px',
+      fontFamily: 'Roboto Mono, Courier New, monospace',
+      color: '#666666',
+    });
+    cancelBtn.setOrigin(0.5);
+    cancelBtn.setInteractive({ useHandCursor: true });
+
+    container.add([title, instructions, codeInput, status, cancelBtn]);
+
+    // Update display helper
+    const updateDisplay = () => {
+      const display = enteredCode.padEnd(6, '_');
+      codeInput.setText(display);
+    };
+
+    // Keyboard handler
+    const handleKeydown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        networkManager.disconnect();
+        this.input.keyboard?.off('keydown', handleKeydown);
+        container.destroy();
+        overlay.destroy();
+        return;
+      }
+
+      if (event.key === 'Backspace') {
+        enteredCode = enteredCode.slice(0, -1);
+        updateDisplay();
+        return;
+      }
+
+      // Only accept A-Z and 0-9
+      const key = event.key.toUpperCase();
+      if (/^[A-Z0-9]$/.test(key) && enteredCode.length < 6) {
+        enteredCode += key;
+        updateDisplay();
+
+        // Auto-join when 6 characters entered
+        if (enteredCode.length === 6) {
+          status.setText('Connecting...');
+          status.setColor('#888888');
+          this.input.keyboard?.off('keydown', handleKeydown);
+
+          networkManager.joinGame(enteredCode).then(() => {
+            status.setText('Connected!');
+            status.setColor('#44ff44');
+            this.time.delayedCall(500, () => {
+              container.destroy();
+              overlay.destroy();
+              this.cameras.main.fade(800, 0, 0, 0, false, (_cam: Phaser.Cameras.Scene2D.Camera, progress: number) => {
+                if (progress === 1) {
+                  this.scene.start('HubScene');
+                }
+              });
+            });
+          }).catch((error: Error) => {
+            status.setText(error.message === 'Connection timeout' ? 'Connection timeout' : 'Failed to connect');
+            status.setColor('#ff4444');
+            enteredCode = '';
+            updateDisplay();
+            // Re-enable keyboard
+            this.input.keyboard?.on('keydown', handleKeydown);
+          });
+        }
+      }
+    };
+
+    this.input.keyboard?.on('keydown', handleKeydown);
+
+    // Set up cancel button handlers (after handleKeydown is defined)
+    cancelBtn.on('pointerover', () => cancelBtn.setColor('#ff4444'));
+    cancelBtn.on('pointerout', () => cancelBtn.setColor('#666666'));
+    cancelBtn.on('pointerdown', () => {
+      networkManager.disconnect();
+      this.input.keyboard?.off('keydown', handleKeydown);
+      container.destroy();
+      overlay.destroy();
+    });
   }
 
   private transitionToGame(isContinue: boolean, saveInfo?: ReturnType<typeof SaveSystem.getSaveInfo>): void {
