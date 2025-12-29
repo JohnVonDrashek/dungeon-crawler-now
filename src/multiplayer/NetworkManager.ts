@@ -207,6 +207,7 @@ export class NetworkManager {
     this.intentionalDisconnect = false;
     this.reconnectAttempts = 0;
     mpLog.setRole('HOST');
+    mpLog.setRoomCode(this._roomCode);
     mpLog.info('Network', `Hosting game with code: ${this._roomCode}`);
     this.setConnectionState('connecting');
 
@@ -244,6 +245,7 @@ export class NetworkManager {
     this.intentionalDisconnect = false;
     this.reconnectAttempts = 0;
     mpLog.setRole('GUEST');
+    mpLog.setRoomCode(normalizedCode);
     mpLog.info('Network', `Joining game with code: ${normalizedCode}`);
     this.setConnectionState('connecting');
 
@@ -353,6 +355,9 @@ export class NetworkManager {
   }
 
   disconnect(): void {
+    // Auto-save and download logs on disconnect
+    mpLog.onDisconnect();
+
     // Mark as intentional so reconnect logic doesn't trigger
     this.intentionalDisconnect = true;
 
