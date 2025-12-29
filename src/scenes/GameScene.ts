@@ -2,17 +2,15 @@ import { Player } from '../entities/Player';
 import { Enemy } from '../entities/Enemy';
 import { BossEnemy } from '../entities/enemies/EnemyTypes';
 import { TILE_SIZE, DUNGEON_WIDTH, DUNGEON_HEIGHT } from '../utils/constants';
-import { DungeonGenerator, DungeonData, Room, RoomType } from '../systems/DungeonGenerator';
+import { DungeonGenerator, DungeonData, RoomType } from '../systems/DungeonGenerator';
 import { CombatSystem } from '../systems/CombatSystem';
 import { LootSystem } from '../systems/LootSystem';
 import { SaveSystem } from '../systems/SaveSystem';
-import { ItemRarity } from '../systems/Item';
 import { MinimapUI } from '../ui/MinimapUI';
 import { LevelUpUI } from '../ui/LevelUpUI';
 import { DebugMenuUI } from '../ui/DebugMenuUI';
 import { RoomManager } from '../systems/RoomManager';
 import { HazardSystem } from '../systems/HazardSystem';
-import { Weapon } from '../systems/Weapon';
 import { LoreSystem } from '../systems/LoreSystem';
 import { LoreUIManager } from '../ui/LoreUIManager';
 import { LootDropManager } from '../systems/LootDropManager';
@@ -23,7 +21,6 @@ import { RoomDecorationManager } from '../systems/RoomDecorationManager';
 import { progressionManager } from '../systems/ProgressionSystem';
 import { SinWorld, getWorldConfig } from '../config/WorldConfig';
 import { DungeonNPCManager } from '../systems/DungeonNPCManager';
-import { hasWangTileset, getWangMapping, getWangTileFrame, getSimpleCornerValues } from '../systems/WangTileSystem';
 import { BaseScene } from './BaseScene';
 import { AudioSystem } from '../systems/AudioSystem';
 import { LightingSystem } from '../systems/LightingSystem';
@@ -35,6 +32,12 @@ import { networkManager } from '../multiplayer/NetworkManager';
 import { HostController } from '../multiplayer/HostController';
 import { GuestController } from '../multiplayer/GuestController';
 import { PlayerSync } from '../multiplayer/PlayerSync';
+
+// Import extracted modules
+import { createDungeonTiles } from './game/GameSceneInit';
+import { registerKeyboardHandlers, cleanupInput } from './game/GameSceneInput';
+import { setupCollisions } from './game/GameSceneCollisions';
+import { registerEventHandlers, cleanupEventHandlers, EventHandlers } from './game/GameSceneEvents';
 
 export class GameScene extends BaseScene {
   // Type narrowing for inherited properties (guaranteed non-null in this scene)
@@ -48,7 +51,6 @@ export class GameScene extends BaseScene {
   private dungeon!: DungeonData;
   private dungeonGenerator!: DungeonGenerator;
   private wallLayer!: Phaser.GameObjects.Group;
-  private floorLayer!: Phaser.GameObjects.Group;
   private enemySpawnManager!: EnemySpawnManager;
   private playerAttackManager!: PlayerAttackManager;
   private enemyProjectiles!: Phaser.Physics.Arcade.Group;
@@ -82,6 +84,8 @@ export class GameScene extends BaseScene {
   private enemiesKilled: number = 0;
   private itemsCollected: number = 0;
   private readonly FINAL_FLOOR = 20;
+  private exit!: Phaser.Physics.Arcade.Sprite;
+  private eventHandlers!: EventHandlers;
 
   // Multiplayer
   private hostController: HostController | null = null;
@@ -93,6 +97,22 @@ export class GameScene extends BaseScene {
   }
 
   createScene(): void {
+    this.initializeSceneState();
+    this.initializeSystems();
+    this.createPlayer();
+    this.restoreShopData();
+    this.createManagers();
+    this.setupMultiplayer();
+    this.setupCamera();
+    this.createExit();
+    this.loadSavedGame();
+    this.createUI();
+    this.setupCollisionsAndEvents();
+    this.setupKeyboardControls();
+    this.showBossAnnouncementIfNeeded();
+  }
+
+  private initializeSceneState(): void {
     this.floor = this.registry.get('floor') || 1;
     this.currentWorld = this.registry.get('currentWorld') || null;
     this.canExit = true;
@@ -101,7 +121,7 @@ export class GameScene extends BaseScene {
     // In legacy mode (no world), every 5th floor is boss
     if (this.currentWorld) {
       this.isBossFloor = this.floor === 3;
-      this.isFinalBoss = false; // Final boss is per-world now
+      this.isFinalBoss = false;
     } else {
       this.isBossFloor = this.floor % 5 === 0;
       this.isFinalBoss = this.floor === this.FINAL_FLOOR;
@@ -110,7 +130,9 @@ export class GameScene extends BaseScene {
     // Persist stats across floor transitions
     this.enemiesKilled = this.registry.get('enemiesKilled') || 0;
     this.itemsCollected = this.registry.get('itemsCollected') || 0;
+  }
 
+  private initializeSystems(): void {
     this.combatSystem = new CombatSystem(this);
     this.visualEffects = new VisualEffectsManager(this);
     this.lootSystem = new LootSystem(0.5);
@@ -123,20 +145,24 @@ export class GameScene extends BaseScene {
 
     this.physics.world.setBounds(0, 0, DUNGEON_WIDTH * TILE_SIZE, DUNGEON_HEIGHT * TILE_SIZE);
 
-    this.createDungeonTiles();
+    // Use extracted module for dungeon tile creation
+    const tiles = createDungeonTiles(this, this.dungeon, this.currentWorld);
+    this.wallLayer = tiles.wallLayer;
+    // floorLayer is created but only used for visual rendering, not referenced later
 
     // Initialize lighting system with world-specific colors and effects
     this.initLighting(this.currentWorld);
     this.initLightingEffects(this.dungeon.tiles, TILE_SIZE);
+  }
 
+  private createPlayer(): void {
     const spawnX = this.dungeon.spawnPoint.x * TILE_SIZE + TILE_SIZE / 2;
     const spawnY = this.dungeon.spawnPoint.y * TILE_SIZE + TILE_SIZE / 2;
     this.player = new Player(this, spawnX, spawnY);
-
-    // Create player torch light
     this.lightingSystem.createPlayerTorch(spawnX, spawnY);
+  }
 
-    // Restore player from ShopScene if coming from there
+  private restoreShopData(): void {
     const shopData = this.registry.get('shopData') as {
       floor: number;
       playerStats: ReturnType<Player['getSaveData']>;
@@ -147,12 +173,12 @@ export class GameScene extends BaseScene {
       this.player.restoreFromSave(shopData.playerStats);
       this.player.inventory.deserialize(shopData.inventorySerialized);
       this.player.recalculateStats();
-      // Clear shopData so it doesn't persist across sessions
       this.registry.remove('shopData');
-      // Save progress after shop
       this.saveGame();
     }
+  }
 
+  private createManagers(): void {
     // Create projectile groups
     this.playerAttackManager = new PlayerAttackManager(this, this.player, this.audioSystem);
     this.playerAttackManager.create();
@@ -179,7 +205,7 @@ export class GameScene extends BaseScene {
     this.loreUIManager.create();
     this.lorePrompt = this.loreUIManager.getLorePrompt();
 
-    // Add room decorations (chests, shrines, candles) with callback for lore placement
+    // Add room decorations with lore callback
     this.roomDecorationManager.addRoomDecorations((room) => {
       this.loreUIManager.tryAddLoreObject(room);
       if (room.type === RoomType.SHRINE) {
@@ -187,17 +213,127 @@ export class GameScene extends BaseScene {
       }
     });
 
-    // Setup special room collisions
-    this.physics.add.overlap(
-      this.player, this.chests,
-      this.roomDecorationManager.handleChestOpen.bind(this.roomDecorationManager) as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
-      undefined, this
+    // Create room manager for door/room mechanics
+    this.roomManager = new RoomManager(this, this.dungeon);
+
+    // Create enemy spawn manager (needs roomManager)
+    this.enemySpawnManager = new EnemySpawnManager(
+      this, this.player, this.roomManager, this.audioSystem, this.enemyProjectiles, this.floor, this.currentWorld
     );
-    this.physics.add.overlap(
-      this.player, this.shrines,
-      this.roomDecorationManager.handleShrineUse.bind(this.roomDecorationManager) as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
-      undefined, this
+    this.enemySpawnManager.create();
+
+    // Create hazard system
+    this.hazardSystem = new HazardSystem(this, this.player, this.floor);
+    this.hazardSystem.setRoomManager(this.roomManager);
+  }
+
+  private setupMultiplayer(): void {
+    console.log('[GameScene] Multiplayer state:', {
+      isMultiplayer: networkManager.isMultiplayer,
+      isHost: networkManager.isHost,
+      isGuest: networkManager.isGuest,
+      roomCode: networkManager.roomCode,
+    });
+
+    if (networkManager.isMultiplayer) {
+      this.playerSync = new PlayerSync(this.player);
+
+      if (networkManager.isHost) {
+        console.log('[GameScene] Creating HostController');
+        this.hostController = new HostController(this, this.player, this.enemies);
+      } else {
+        console.log('[GameScene] Creating GuestController');
+        this.guestController = new GuestController(this, this.player);
+        this.guestController.setRoomManager(this.roomManager);
+      }
+    }
+  }
+
+  private setupCamera(): void {
+    this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+    this.cameras.main.setBounds(0, 0, DUNGEON_WIDTH * TILE_SIZE, DUNGEON_HEIGHT * TILE_SIZE);
+  }
+
+  private createExit(): void {
+    const exitX = this.dungeon.exitPoint.x * TILE_SIZE + TILE_SIZE / 2;
+    const exitY = this.dungeon.exitPoint.y * TILE_SIZE + TILE_SIZE / 2;
+    this.exit = this.physics.add.sprite(exitX, exitY, 'exit');
+    this.exit.setDepth(1);
+    this.exit.setImmovable(true);
+    this.exit.setPipeline('Light2D');
+    if (this.exit.body) {
+      this.exit.body.setSize(TILE_SIZE * 1.5, TILE_SIZE * 1.5);
+    }
+  }
+
+  private setupCollisionsAndEvents(): void {
+    // Use extracted collision module
+    setupCollisions(
+      this,
+      {
+        player: this.player,
+        wallLayer: this.wallLayer,
+        enemies: this.enemies,
+        enemyProjectiles: this.enemyProjectiles,
+        exit: this.exit,
+        chests: this.chests,
+        shrines: this.shrines,
+      },
+      {
+        combatSystem: this.combatSystem,
+        visualEffects: this.visualEffects,
+        audioSystem: this.audioSystem,
+        playerAttackManager: this.playerAttackManager,
+        lootDropManager: this.lootDropManager,
+        roomManager: this.roomManager,
+        roomDecorationManager: this.roomDecorationManager,
+        hazardSystem: this.hazardSystem,
+        debugMenuUI: this.debugMenuUI,
+      },
+      { onExitCollision: () => this.handleExitCollision() }
     );
+
+    // Use extracted event module
+    this.eventHandlers = registerEventHandlers(
+      this,
+      {
+        player: this.player,
+        combatSystem: this.combatSystem,
+        visualEffects: this.visualEffects,
+        audioSystem: this.audioSystem,
+        lootSystem: this.lootSystem,
+        lootDropManager: this.lootDropManager,
+        enemySpawnManager: this.enemySpawnManager,
+        roomManager: this.roomManager,
+        levelUpUI: this.levelUpUI,
+        debugMenuUI: this.debugMenuUI,
+      },
+      {
+        floor: this.floor,
+        currentWorld: this.currentWorld,
+        isFinalBoss: this.isFinalBoss,
+        getEnemiesKilled: () => this.enemiesKilled,
+        setEnemiesKilled: (count) => { this.enemiesKilled = count; },
+        getItemsCollected: () => this.itemsCollected,
+        setItemsCollected: (count) => { this.itemsCollected = count; },
+      },
+      {
+        onPlayerDeath: () => this.handlePlayerDeath(),
+        onVictory: () => this.handleVictory(),
+        onWorldComplete: () => this.handleWorldComplete(),
+      }
+    );
+  }
+
+  private createUI(): void {
+    this.inventoryUI = new InventoryUI(this, this.player);
+    this.minimapUI = new MinimapUI(this, this.dungeon);
+    this.roomDecorationManager.setMinimapUI(this.minimapUI);
+    this.levelUpUI = new LevelUpUI(this, this.player);
+    this.settingsUI = new SettingsUI(this, this.audioSystem);
+    this.dialogueUI = new DialogueUI(this);
+    this.gameHUD = new GameHUD(this, this.player);
+    this.gameHUD.create();
 
     // Create debug menu UI
     this.debugMenuUI = new DebugMenuUI(
@@ -213,64 +349,6 @@ export class GameScene extends BaseScene {
     );
     this.debugMenuUI.setFloorInfo(this.floor, this.currentWorld);
 
-    // Create room manager for door/room mechanics
-    this.roomManager = new RoomManager(this, this.dungeon);
-
-    // Create enemy spawn manager (needs roomManager)
-    this.enemySpawnManager = new EnemySpawnManager(
-      this, this.player, this.roomManager, this.audioSystem, this.enemyProjectiles, this.floor, this.currentWorld
-    );
-    this.enemySpawnManager.create();
-
-    // Initialize multiplayer if connected (after enemySpawnManager exists)
-    console.log('[GameScene] Multiplayer state:', {
-      isMultiplayer: networkManager.isMultiplayer,
-      isHost: networkManager.isHost,
-      isGuest: networkManager.isGuest,
-      roomCode: networkManager.roomCode,
-    });
-
-    if (networkManager.isMultiplayer) {
-      this.playerSync = new PlayerSync(this.player);
-
-      if (networkManager.isHost) {
-        console.log('[GameScene] Creating HostController');
-        this.hostController = new HostController(
-          this,
-          this.player,
-          this.enemies
-        );
-      } else {
-        console.log('[GameScene] Creating GuestController');
-        this.guestController = new GuestController(this, this.player);
-        this.guestController.setRoomManager(this.roomManager);
-      }
-    }
-
-    // Create hazard system
-    this.hazardSystem = new HazardSystem(this, this.player, this.floor);
-    this.hazardSystem.setRoomManager(this.roomManager);
-
-    this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
-    this.cameras.main.setBounds(0, 0, DUNGEON_WIDTH * TILE_SIZE, DUNGEON_HEIGHT * TILE_SIZE);
-
-    this.createExit();
-    this.setupCollisions();
-    this.setupEventHandlers();
-    this.setupKeyboardControls();
-
-    // Load saved player data if on floor 1 and save exists
-    this.loadSavedGame();
-
-    this.inventoryUI = new InventoryUI(this, this.player);
-    this.minimapUI = new MinimapUI(this, this.dungeon);
-    this.roomDecorationManager.setMinimapUI(this.minimapUI);
-    this.levelUpUI = new LevelUpUI(this, this.player);
-    this.settingsUI = new SettingsUI(this, this.audioSystem);
-    this.dialogueUI = new DialogueUI(this);
-    this.gameHUD = new GameHUD(this, this.player);
-    this.gameHUD.create();
-
     // Create and initialize DungeonNPCManager
     this.dungeonNPCManager = new DungeonNPCManager(
       this, this.player, this.dungeon, this.dialogueUI, this.currentWorld, this.floor
@@ -278,10 +356,25 @@ export class GameScene extends BaseScene {
     this.dungeonNPCManager.setLorePrompt(this.lorePrompt);
     this.dungeonNPCManager.spawnDungeonNPCs();
 
-    // Setup player attack after UI is created (needs UI visibility check)
+    // Setup player attack after UI is created
     this.playerAttackManager.setupPlayerAttack(this.inventoryUI, this.levelUpUI);
+  }
 
-    // Boss floor announcement
+  private setupKeyboardControls(): void {
+    // Use extracted keyboard handler module
+    registerKeyboardHandlers(this, {
+      player: this.player,
+      inventoryUI: this.inventoryUI,
+      levelUpUI: this.levelUpUI,
+      settingsUI: this.settingsUI,
+      debugMenuUI: this.debugMenuUI,
+      loreUIManager: this.loreUIManager,
+      dialogueUI: this.dialogueUI,
+      dungeonNPCManager: this.dungeonNPCManager,
+    });
+  }
+
+  private showBossAnnouncementIfNeeded(): void {
     if (this.isBossFloor) {
       this.showBossAnnouncement();
     }
@@ -296,22 +389,18 @@ export class GameScene extends BaseScene {
     this.hostController?.update(delta);
     this.guestController?.update();
 
-    // Reset speed modifier each frame (will be reapplied by SlothEnemy if in range)
+    // Reset speed modifier each frame
     this.player.resetSpeedModifier();
-
-    // Allow movement even during dialogue
     this.player.update(time, delta);
 
     // Update lighting system
     this.lightingSystem.update(delta);
     this.lightingSystem.updatePlayerTorch(this.player.x, this.player.y);
 
-    // Check for room entry (returns room if entering a new unvisited room)
-    // In multiplayer, only host triggers room activation
+    // Check for room entry
     const canActivateRooms = !networkManager.isMultiplayer || networkManager.isHost;
     const enteredRoom = this.roomManager.update(this.player.x, this.player.y);
 
-    // Debug logging for multiplayer room issues
     if (enteredRoom) {
       console.log('[GameScene] Room entry detected:', {
         roomId: enteredRoom.id,
@@ -324,7 +413,6 @@ export class GameScene extends BaseScene {
     if (enteredRoom && canActivateRooms) {
       console.log('[GameScene] Room activated:', enteredRoom.id, 'isHost:', networkManager.isHost);
 
-      // Light up the torches in this room when it's sealed
       if (this.lightingSystem) {
         this.lightingSystem.lightRoom(enteredRoom.id);
       }
@@ -333,7 +421,6 @@ export class GameScene extends BaseScene {
       this.enemySpawnManager.spawnEnemiesInRoom(enteredRoom, this.isBossFloor, exitRoom);
       this.hazardSystem.spawnHazardsInRoom(enteredRoom, this.dungeon);
 
-      // In multiplayer, tell guest to teleport to host
       if (this.hostController) {
         this.hostController.broadcastRoomActivated(enteredRoom.id);
       }
@@ -347,7 +434,6 @@ export class GameScene extends BaseScene {
       }
     });
 
-    // Update hazards
     this.hazardSystem.update(delta);
 
     // Check NPC proximity
@@ -362,240 +448,9 @@ export class GameScene extends BaseScene {
     this.loreUIManager.updateLorePrompt();
   }
 
-  private createDungeonTiles(): void {
-    this.floorLayer = this.add.group();
-    this.wallLayer = this.physics.add.staticGroup();
-
-    // Check if we have a Wang tileset for this world
-    const useWangTiles = this.currentWorld && hasWangTileset(this.currentWorld);
-    const wangMapping = useWangTiles ? getWangMapping(this.currentWorld!) : null;
-    const tilesetKey = useWangTiles ? `tileset_${this.currentWorld}` : null;
-
-    // Fallback textures for non-Wang rendering
-    const wallTexture = this.currentWorld ? `wall_${this.currentWorld}` : 'wall';
-
-    for (let y = 0; y < DUNGEON_HEIGHT; y++) {
-      for (let x = 0; x < DUNGEON_WIDTH; x++) {
-        const tileX = x * TILE_SIZE;
-        const tileY = y * TILE_SIZE;
-
-        if (useWangTiles && wangMapping && tilesetKey && this.textures.exists(tilesetKey)) {
-          // Use Wang tileset for connected textures
-          const corners = getSimpleCornerValues(
-            this.dungeon.tiles, x, y, DUNGEON_WIDTH, DUNGEON_HEIGHT
-          );
-          const frameIndex = getWangTileFrame(
-            corners.nw, corners.ne, corners.sw, corners.se, wangMapping
-          );
-
-          if (this.dungeon.tiles[y][x] === 1) {
-            // Wall tile with Wang texture
-            const wall = this.wallLayer.create(tileX, tileY, tilesetKey, frameIndex) as Phaser.Physics.Arcade.Sprite;
-            wall.setOrigin(0, 0);
-            wall.setImmovable(true);
-            wall.refreshBody();
-            // Apply Light2D pipeline for dynamic lighting
-            wall.setPipeline('Light2D');
-          } else {
-            // Floor tile with Wang texture
-            const floor = this.add.sprite(tileX, tileY, tilesetKey, frameIndex).setOrigin(0, 0);
-            floor.setDepth(0);
-            // Apply Light2D pipeline for dynamic lighting
-            floor.setPipeline('Light2D');
-            this.floorLayer.add(floor);
-          }
-        } else {
-          // Fallback to simple textures
-          if (this.dungeon.tiles[y][x] === 1) {
-            const wall = this.wallLayer.create(tileX, tileY, wallTexture) as Phaser.Physics.Arcade.Sprite;
-            wall.setOrigin(0, 0);
-            wall.setImmovable(true);
-            wall.refreshBody();
-            // Apply Light2D pipeline for dynamic lighting
-            wall.setPipeline('Light2D');
-          } else if (this.dungeon.tiles[y][x] === 0) {
-            const room = this.getRoomAtTile(x, y);
-            const floorTexture = this.getFloorTextureForRoom(room);
-            const floor = this.add.sprite(tileX, tileY, floorTexture).setOrigin(0, 0);
-            floor.setDepth(0);
-            // Apply Light2D pipeline for dynamic lighting
-            floor.setPipeline('Light2D');
-            this.floorLayer.add(floor);
-          }
-        }
-      }
-    }
-  }
-
-  private getRoomAtTile(x: number, y: number): Room | null {
-    for (const room of this.dungeon.rooms) {
-      if (x >= room.x && x < room.x + room.width &&
-          y >= room.y && y < room.y + room.height) {
-        return room;
-      }
-    }
-    return null;
-  }
-
-  private getFloorTextureForRoom(room: Room | null): string {
-    // Default floor texture based on current world
-    const defaultFloor = this.currentWorld ? `floor_${this.currentWorld}` : 'floor';
-
-    if (!room) return defaultFloor; // Corridors use world floor
-
-    switch (room.type) {
-      case RoomType.TREASURE:
-        return 'floor_treasure';
-      case RoomType.TRAP:
-        return 'floor_trap';
-      case RoomType.SHRINE:
-        return 'floor_shrine';
-      case RoomType.CHALLENGE:
-        return 'floor_challenge';
-      default:
-        return defaultFloor;
-    }
-  }
-
-  private exit!: Phaser.Physics.Arcade.Sprite;
-
-  private createExit(): void {
-    const exitX = this.dungeon.exitPoint.x * TILE_SIZE + TILE_SIZE / 2;
-    const exitY = this.dungeon.exitPoint.y * TILE_SIZE + TILE_SIZE / 2;
-    this.exit = this.physics.add.sprite(exitX, exitY, 'exit');
-    this.exit.setDepth(1);
-    this.exit.setImmovable(true);
-    this.exit.setPipeline('Light2D');
-    if (this.exit.body) {
-      this.exit.body.setSize(TILE_SIZE * 1.5, TILE_SIZE * 1.5);
-    }
-  }
-
-  private setupCollisions(): void {
-    this.physics.add.collider(this.player, this.wallLayer);
-    this.physics.add.collider(this.enemies, this.wallLayer);
-    this.physics.add.collider(this.enemies, this.enemies);
-
-    this.physics.add.overlap(
-      this.player, this.enemies,
-      this.handlePlayerEnemyCollision as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
-      undefined, this
-    );
-
-    // Player projectile collisions
-    const projectileGroup = this.playerAttackManager.getProjectileGroup();
-    this.physics.add.overlap(
-      projectileGroup, this.enemies,
-      this.playerAttackManager.handleProjectileEnemyCollision.bind(this.playerAttackManager) as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
-      undefined, this
-    );
-
-    this.physics.add.collider(
-      projectileGroup, this.wallLayer,
-      this.playerAttackManager.handleProjectileWallCollision.bind(this.playerAttackManager) as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
-      undefined, this
-    );
-
-    // Enemy projectiles vs player
-    this.physics.add.overlap(
-      this.player, this.enemyProjectiles,
-      this.handleEnemyProjectilePlayerCollision as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
-      undefined, this
-    );
-
-    this.physics.add.collider(
-      this.enemyProjectiles, this.wallLayer,
-      this.handleProjectileWallCollision as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
-      undefined, this
-    );
-
-    this.physics.add.overlap(
-      this.player, this.exit,
-      this.handleExitCollision as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
-      undefined, this
-    );
-
-    // Lore objects - handled via Q key interaction, not automatic overlap
-
-    // Loot pickups
-    const lootGroups = this.lootDropManager.getGroups();
-    this.physics.add.overlap(
-      this.player, lootGroups.items,
-      this.lootDropManager.handleItemPickup.bind(this.lootDropManager) as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
-      undefined, this
-    );
-
-    this.physics.add.overlap(
-      this.player, lootGroups.weapons,
-      this.lootDropManager.handleWeaponPickup.bind(this.lootDropManager) as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
-      undefined, this
-    );
-
-    this.physics.add.overlap(
-      this.player, lootGroups.gold,
-      this.lootDropManager.handleGoldPickup.bind(this.lootDropManager) as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
-      undefined, this
-    );
-
-    // Door collision
-    this.physics.add.collider(this.player, this.roomManager.getDoorGroup());
-    this.physics.add.collider(this.enemies, this.roomManager.getDoorGroup());
-
-    // Hazard arrow collision with walls
-    this.physics.add.collider(
-      this.hazardSystem.getArrowGroup(), this.wallLayer,
-      this.handleProjectileWallCollision as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
-      undefined, this
-    );
-  }
-
-  private handlePlayerEnemyCollision(
-    playerObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject,
-    enemyObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject
-  ): void {
-    const player = playerObj as unknown as Player;
-    const enemy = enemyObj as unknown as Enemy;
-
-    if (player.getIsInvulnerable() || this.debugMenuUI.getIsDevMode()) return;
-
-    const result = this.combatSystem.calculateDamage(enemy, player);
-    this.combatSystem.applyDamage(player, result);
-    this.audioSystem.play('sfx_hurt', 0.4);
-    this.visualEffects.shakeCamera(5, 100);
-    this.visualEffects.showDamageNumber(player.x, player.y, result.damage, true);
-  }
-
-  private handleEnemyProjectilePlayerCollision(
-    playerObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject,
-    projectileObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject
-  ): void {
-    const player = playerObj as unknown as Player;
-    const projectile = projectileObj as Phaser.Physics.Arcade.Sprite;
-
-    if (player.getIsInvulnerable() || this.debugMenuUI.getIsDevMode()) {
-      projectile.destroy();
-      return;
-    }
-
-    const damage = projectile.getData('damage') || 5;
-    player.takeDamage(damage);
-    this.audioSystem.play('sfx_hurt', 0.4);
-    this.visualEffects.shakeCamera(5, 100);
-    this.visualEffects.showDamageNumber(player.x, player.y, damage, true);
-    projectile.destroy();
-  }
-
-  private handleProjectileWallCollision(
-    projectileObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject
-  ): void {
-    const projectile = projectileObj as Phaser.Physics.Arcade.Sprite;
-    projectile.destroy();
-  }
-
   private handleExitCollision(): void {
     if (!this.canExit) return;
 
-    // Block exit on boss floor until boss is defeated
     if (this.isBossFloor && this.hasBossAlive()) {
       this.visualEffects.showGameMessage('Defeat the boss first!');
       return;
@@ -603,13 +458,11 @@ export class GameScene extends BaseScene {
 
     this.canExit = false;
 
-    // World mode: different flow
     if (this.currentWorld) {
       this.handleWorldExit();
       return;
     }
 
-    // Legacy mode: original flow
     if (this.isFinalBoss) {
       this.handleVictory();
       return;
@@ -622,28 +475,21 @@ export class GameScene extends BaseScene {
   private handleWorldExit(): void {
     this.audioSystem.play('sfx_stairs', 0.5);
 
-    // Floor 3 (boss floor) - complete world and return to hub
     if (this.floor === 3) {
       this.completeWorldAndReturnToHub();
       return;
     }
 
-    // Floor 1-2 - go to shop, then next floor
     this.showShop();
   }
 
   private completeWorldAndReturnToHub(): void {
-    // Mark the world as complete
     progressionManager.completeWorld(this.currentWorld!);
-
-    // Save progress
     this.saveGame();
 
-    // Show completion message
     const worldConfig = getWorldConfig(this.currentWorld!);
     this.showWorldCompleteMessage(worldConfig.name);
 
-    // Transition to hub after delay
     this.time.delayedCall(2500, () => {
       this.cameras.main.fade(500, 0, 0, 0, false, (_camera: Phaser.Cameras.Scene2D.Camera, progress: number) => {
         if (progress === 1) {
@@ -692,12 +538,10 @@ export class GameScene extends BaseScene {
     subtitle.setScrollFactor(0);
     subtitle.setDepth(200);
 
-    // Celebration effect
     this.cameras.main.flash(500, 50, 200, 50);
   }
 
   private showShop(): void {
-    // Save player state to registry for ShopScene
     this.registry.set('shopData', {
       floor: this.floor,
       currentWorld: this.currentWorld,
@@ -705,11 +549,9 @@ export class GameScene extends BaseScene {
       inventorySerialized: this.player.inventory.serialize(),
     });
 
-    // Also save stats to registry
     this.registry.set('enemiesKilled', this.enemiesKilled);
     this.registry.set('itemsCollected', this.itemsCollected);
 
-    // Transition to shop scene
     this.cameras.main.fade(300, 0, 0, 0, false, (_camera: Phaser.Cameras.Scene2D.Camera, progress: number) => {
       if (progress === 1) {
         this.scene.start('ShopScene');
@@ -725,15 +567,13 @@ export class GameScene extends BaseScene {
     let subtitle = '';
 
     if (this.currentWorld) {
-      // World mode - show sin boss announcement
       const worldConfig = getWorldConfig(this.currentWorld);
-      message = `⚔ ${worldConfig.name.toUpperCase()} ⚔`;
+      message = `${worldConfig.name.toUpperCase()}`;
       subtitle = 'THE SIN AWAITS';
       color = `#${worldConfig.colors.primary.toString(16).padStart(6, '0')}`;
       fontSize = '36px';
       showSubtitle = true;
     } else {
-      // Legacy mode
       const isFinal = this.floor === this.FINAL_FLOOR;
       message = isFinal ? 'FLOOR 20\nFINAL BOSS' : `FLOOR ${this.floor}\nBOSS BATTLE`;
       color = isFinal ? '#fbbf24' : '#ff4444';
@@ -743,7 +583,6 @@ export class GameScene extends BaseScene {
     const centerX = this.cameras.main.width / 2;
     const centerY = this.cameras.main.height / 2;
 
-    // Screen flash for dramatic effect in world mode
     if (this.currentWorld) {
       const worldConfig = getWorldConfig(this.currentWorld);
       const flashColor = worldConfig.colors.primary;
@@ -765,7 +604,6 @@ export class GameScene extends BaseScene {
     text.setScrollFactor(0);
     text.setDepth(200);
 
-    // Scale in animation
     text.setScale(0.5);
     this.tweens.add({
       targets: text,
@@ -774,7 +612,6 @@ export class GameScene extends BaseScene {
       ease: 'Back.easeOut',
     });
 
-    // Subtitle for world mode
     let subtitleText: Phaser.GameObjects.Text | null = null;
     if (showSubtitle) {
       subtitleText = this.add.text(centerX, centerY + 45, subtitle, {
@@ -798,7 +635,6 @@ export class GameScene extends BaseScene {
       });
     }
 
-    // Fade out
     this.tweens.add({
       targets: text,
       alpha: 0,
@@ -818,235 +654,9 @@ export class GameScene extends BaseScene {
     }
   }
 
-  private setupEventHandlers(): void {
-    // Events from PlayerAttackManager
-    this.events.on('showDamageNumber', (x: number, y: number, damage: number, isPlayer: boolean) => {
-      this.visualEffects.showDamageNumber(x, y, damage, isPlayer);
-    });
-
-    this.events.on('shakeCamera', (intensity: number, duration: number) => {
-      this.visualEffects.shakeCamera(intensity, duration);
-    });
-
-    this.events.on('requestEnemiesGroup', (callback: (enemies: Phaser.Physics.Arcade.Group) => void) => {
-      callback(this.enemies);
-    });
-
-    this.events.on('playerDeath', () => {
-      this.handlePlayerDeath();
-    });
-
-    this.events.on('enemyDeath', (enemy: Enemy) => {
-      this.player.gainXP(enemy.xpValue);
-      this.audioSystem.play('sfx_enemy_death', 0.4);
-      this.enemySpawnManager.removeHealthBar(enemy);
-      this.visualEffects.spawnDeathParticles(enemy.x, enemy.y);
-      this.enemiesKilled++;
-      this.registry.set('enemiesKilled', this.enemiesKilled);
-
-      // Notify room manager (opens doors when room is cleared)
-      // Count remaining active enemies, excluding the one that just died
-      const remainingEnemies = this.enemies.getChildren().filter((e) =>
-        e.active && e !== (enemy as unknown as Phaser.GameObjects.GameObject)
-      ).length;
-      this.roomManager.onEnemyKilled(remainingEnemies);
-
-      // Switch back to exploration music when room is cleared
-      if (remainingEnemies === 0) {
-        this.audioSystem.setMusicStyle('exploration');
-      }
-
-      // Boss drops guaranteed rare+ loot and a weapon
-      // Sin bosses have scale >= 2, regular bosses extend BossEnemy
-      const isBoss = enemy instanceof BossEnemy || enemy.scale >= 2;
-      if (isBoss) {
-        const loot = this.lootSystem.generateGuaranteedLoot(ItemRarity.RARE);
-        this.lootDropManager.spawnItemDrop(enemy.x, enemy.y, loot);
-
-        // Guaranteed weapon from bosses with higher rarity
-        const weapon = Weapon.createRandom(this.floor + 5);
-        this.lootDropManager.spawnWeaponDrop(enemy.x + 24, enemy.y, weapon);
-
-        // Bosses drop lots of gold
-        const bossGold = 50 + this.floor * 20;
-        this.lootDropManager.spawnGoldDrop(enemy.x - 24, enemy.y, bossGold);
-
-        // Handle boss victory
-        if (this.currentWorld) {
-          // World mode: defeating boss on floor 3 completes the world
-          this.time.delayedCall(1500, () => {
-            progressionManager.advanceFloor();
-            this.saveGame();
-            this.handleWorldComplete();
-          });
-        } else if (this.isFinalBoss) {
-          // Legacy mode: final boss triggers victory
-          this.time.delayedCall(1500, () => {
-            this.handleVictory();
-          });
-        }
-      } else {
-        // Check if this is a challenge room enemy for better drops
-        const isChallengeEnemy = enemy.getData('challengeEnemy');
-        const dropChance = isChallengeEnemy ? 0.7 : 0.4; // 70% vs 40% item drop
-        const weaponChance = isChallengeEnemy ? 0.3 : 0.15; // 30% vs 15% weapon drop
-
-        // Regular enemies: chance for item
-        const loot = this.lootSystem.generateLoot(this.floor + (isChallengeEnemy ? 2 : 0));
-        if (loot && Math.random() < dropChance / 0.4) { // Adjust for loot system's internal chance
-          this.lootDropManager.spawnItemDrop(enemy.x, enemy.y, loot);
-        }
-
-        // Weapon drop chance
-        if (Math.random() < weaponChance) {
-          const weapon = Weapon.createRandom(this.floor + (isChallengeEnemy ? 2 : 0));
-          this.lootDropManager.spawnWeaponDrop(enemy.x, enemy.y, weapon);
-        }
-
-        // Gold drops - all enemies drop some gold
-        const baseGold = 5 + this.floor * 2;
-        const goldAmount = baseGold + Math.floor(Math.random() * baseGold);
-        const goldMultiplier = isChallengeEnemy ? 2 : 1;
-        this.lootDropManager.spawnGoldDrop(enemy.x, enemy.y, goldAmount * goldMultiplier);
-      }
-    });
-
-    this.events.on('enemyAttack', (enemy: Enemy, target: Player) => {
-      if (!target.getIsInvulnerable() && !this.debugMenuUI.getIsDevMode()) {
-        const result = this.combatSystem.calculateDamage(enemy, target);
-        this.combatSystem.applyDamage(target, result);
-        this.audioSystem.play('sfx_hurt', 0.4);
-        this.visualEffects.shakeCamera(5, 100);
-        this.visualEffects.showDamageNumber(target.x, target.y, result.damage, true);
-      }
-    });
-
-    // Hazard damage event
-    this.events.on('hazardDamage', (damage: number, _source: string) => {
-      if (!this.debugMenuUI.getIsDevMode()) {
-        this.audioSystem.play('sfx_hurt', 0.3);
-        this.visualEffects.shakeCamera(3, 80);
-        this.visualEffects.showDamageNumber(this.player.x, this.player.y, damage, true);
-      }
-    });
-
-    // Loot collection events from LootDropManager
-    this.events.on('itemCollected', () => {
-      this.itemsCollected++;
-      this.registry.set('itemsCollected', this.itemsCollected);
-    });
-
-    this.events.on('inventoryFull', () => {
-      this.visualEffects.showGameMessage('Inventory full!');
-    });
-
-    // Listen for level up
-    this.events.on('playerLevelUp', () => {
-      this.audioSystem.play('sfx_levelup', 0.5);
-      this.visualEffects.showLevelUpNotification();
-      this.levelUpUI.show();
-    });
-
-    // === SIN ENEMY EVENTS ===
-
-    // Sloth's slowing aura - temporarily reduce player speed
-    this.events.on('playerSlowed', (slowFactor: number) => {
-      this.player.setSpeedModifier(slowFactor);
-    });
-
-    // Lust's magnetic pull - apply velocity toward enemy
-    this.events.on('playerPulled', (pullVector: { x: number; y: number }) => {
-      const body = this.player.body as Phaser.Physics.Arcade.Body;
-      if (body) {
-        body.velocity.x += pullVector.x;
-        body.velocity.y += pullVector.y;
-      }
-    });
-
-    // Pride's damage reflection - damage player when attacking Pride
-    this.events.on('damageReflected', (damage: number) => {
-      this.player.takeDamage(damage);
-      this.visualEffects.showDamageNumber(this.player.x, this.player.y, damage, true);
-      this.visualEffects.showFloatingText(this.player.x, this.player.y - 30, 'REFLECTED!', '#ffd700');
-    });
-
-    // Greed's gold stealing - show notification
-    this.events.on('goldStolen', (amount: number) => {
-      this.visualEffects.showFloatingText(this.player.x, this.player.y - 30, `-${amount} gold!`, '#ffd700');
-    });
-  }
-
-  private setupKeyboardControls(): void {
-    if (!this.input.keyboard) return;
-
-    this.input.keyboard.on('keydown-E', () => {
-      // Don't open inventory if another menu is open
-      if (this.settingsUI.getIsVisible() || this.levelUpUI.getIsVisible()) {
-        return;
-      }
-      this.inventoryUI.toggle();
-      if (this.inventoryUI.getIsVisible()) {
-        this.player.setVelocity(0, 0);
-      }
-    });
-
-    this.input.keyboard.on('keydown-ESC', () => {
-      if (this.settingsUI.getIsVisible()) {
-        this.settingsUI.hide();
-      } else if (this.levelUpUI.getIsVisible()) {
-        this.levelUpUI.hide();
-      } else if (this.inventoryUI.getIsVisible()) {
-        this.inventoryUI.toggle();
-      } else {
-        // Open settings if nothing else is open
-        this.player.setVelocity(0, 0);
-        this.settingsUI.show();
-      }
-    });
-
-    // L: Open character / stat allocation menu
-    this.input.keyboard.on('keydown-L', () => {
-      // Don't open levelup if another menu is open
-      if (this.inventoryUI.getIsVisible() || this.settingsUI.getIsVisible()) {
-        return;
-      }
-
-      if (this.levelUpUI.getIsVisible()) {
-        this.levelUpUI.hide();
-      } else {
-        this.player.setVelocity(0, 0);
-        this.levelUpUI.show();
-      }
-    });
-
-    // Q: Interact with nearby lore objects
-    this.input.keyboard.on('keydown-Q', () => {
-      if (this.inventoryUI.getIsVisible() || this.levelUpUI.getIsVisible() || this.settingsUI.getIsVisible()) return;
-      if (this.loreUIManager.hasActiveModal()) {
-        // Close modal if open
-        this.loreUIManager.closeModal();
-        return;
-      }
-      this.loreUIManager.tryInteractWithLore();
-    });
-
-    // R: Talk to nearby NPCs
-    this.input.keyboard.on('keydown-R', () => {
-      if (this.inventoryUI.getIsVisible() || this.levelUpUI.getIsVisible() || this.settingsUI.getIsVisible()) return;
-      if (this.dialogueUI.getIsVisible()) return;
-      if (this.dungeonNPCManager.getNearbyNPC()) {
-        this.dungeonNPCManager.talkToNPC();
-      }
-    });
-
-    // Dev/Debug controls
-    this.debugMenuUI.setupControls();
-  }
-
   private hasBossAlive(): boolean {
     return this.enemies.getChildren().some((child) => {
       const enemy = child as unknown as Enemy;
-      // Check for BossEnemy or sin bosses (all bosses have scale >= 2)
       return enemy.active && (enemy instanceof BossEnemy || enemy.scale >= 2);
     });
   }
@@ -1061,19 +671,13 @@ export class GameScene extends BaseScene {
     };
 
     if (this.currentWorld) {
-      // World mode: record death but keep progression
       progressionManager.handleDeath();
-      // Save progression (active run is now cleared)
       this.saveGame();
-
-      // Clear world from registry
       this.registry.remove('currentWorld');
     } else {
-      // Legacy mode: delete save on death (roguelike mechanic)
       SaveSystem.deleteSave();
     }
 
-    // Clear stats from registry
     this.registry.set('floor', 1);
     this.registry.set('enemiesKilled', 0);
     this.registry.set('itemsCollected', 0);
@@ -1092,7 +696,6 @@ export class GameScene extends BaseScene {
       itemsCollected: this.itemsCollected,
     };
 
-    // Clear stats from registry
     this.registry.set('floor', 1);
     this.registry.set('enemiesKilled', 0);
     this.registry.set('itemsCollected', 0);
@@ -1104,11 +707,9 @@ export class GameScene extends BaseScene {
   }
 
   private handleWorldComplete(): void {
-    // World boss defeated - return to hub
     this.cameras.main.flash(2000, 255, 215, 0);
     this.visualEffects.showGameMessage(`${this.currentWorld} World Complete!`);
 
-    // Clear floor stats from registry
     this.registry.set('floor', 1);
     this.registry.set('currentWorld', null);
     this.registry.set('enemiesKilled', 0);
@@ -1131,15 +732,12 @@ export class GameScene extends BaseScene {
     const savedData = SaveSystem.load();
     if (!savedData) return;
 
-    // Restore progression state
     progressionManager.setProgression(savedData.progression);
 
-    // Restore player data if we have an active run
     const activeRun = savedData.progression.activeRun;
     if (activeRun) {
       this.floor = activeRun.floor;
       this.registry.set('floor', this.floor);
-      // Boss floor is floor 3 of each world (last floor)
       this.isBossFloor = this.floor === 3;
     }
 
@@ -1163,28 +761,13 @@ export class GameScene extends BaseScene {
     // Stop audio
     this.audioSystem?.stopMusic();
 
-    // Clean up event listeners
-    this.events.off('showDamageNumber');
-    this.events.off('shakeCamera');
-    this.events.off('requestEnemiesGroup');
-    this.events.off('playerDeath');
-    this.events.off('enemyDeath');
-    this.events.off('enemyAttack');
-    this.events.off('hazardDamage');
-    this.events.off('itemCollected');
-    this.events.off('inventoryFull');
-    this.events.off('playerLevelUp');
-    this.events.off('playerSlowed');
-    this.events.off('playerPulled');
-    this.events.off('damageReflected');
-    this.events.off('goldStolen');
+    // Clean up event listeners using extracted module
+    if (this.eventHandlers) {
+      cleanupEventHandlers(this, this.eventHandlers);
+    }
 
-    // Clean up keyboard listeners
-    this.input.keyboard?.off('keydown-E');
-    this.input.keyboard?.off('keydown-ESC');
-    this.input.keyboard?.off('keydown-L');
-    this.input.keyboard?.off('keydown-Q');
-    this.input.keyboard?.off('keydown-R');
+    // Clean up keyboard listeners using extracted module
+    cleanupInput(this);
 
     // Clean up lighting
     this.lightingSystem?.destroy();
