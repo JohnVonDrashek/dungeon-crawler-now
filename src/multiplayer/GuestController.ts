@@ -168,6 +168,22 @@ export class GuestController {
         sprite.setDepth(5);
         sprite.setPipeline('Light2D');
 
+        // Enable physics body with proper size for collisions
+        if (sprite.body) {
+          const body = sprite.body as Phaser.Physics.Arcade.Body;
+          body.setSize(16, 16);
+          body.setOffset(
+            (sprite.width - 16) / 2,
+            (sprite.height - 16) / 2
+          );
+          body.setImmovable(false);
+        }
+
+        // Store enemy data on the sprite for collision handling
+        sprite.setData('enemyId', enemyData.id);
+        sprite.setData('hp', enemyData.hp);
+        sprite.setData('maxHp', enemyData.maxHp);
+
         // Create health bar
         const healthBar = this.createHealthBar(enemyData.x, enemyData.y);
 
@@ -194,6 +210,10 @@ export class GuestController {
       );
       guestEnemy.hp = enemyData.hp;
       guestEnemy.maxHp = enemyData.maxHp;
+
+      // Update sprite data for collision handling
+      guestEnemy.sprite.setData('hp', enemyData.hp);
+      guestEnemy.sprite.setData('maxHp', enemyData.maxHp);
 
       // Update health bar position and width
       this.updateHealthBar(guestEnemy);
