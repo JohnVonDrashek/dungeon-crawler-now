@@ -28,6 +28,7 @@ import {
   EmoteMessage,
   LevelUpMessage,
   HealthPickupMessage,
+  DuoKillMessage,
 } from './SyncMessages';
 import { RemotePlayer } from './RemotePlayer';
 import { Player } from '../entities/Player';
@@ -53,6 +54,9 @@ export class HostController {
 
   // Track last hitter for kill attribution
   private lastHitterMap: Map<string, 'host' | 'guest'> = new Map();
+
+  // Track if both players contributed to kill (for duo kill celebration)
+  private dualHittersMap: Map<string, Set<'host' | 'guest'>> = new Map();
 
   // Co-op combo tracking
   private comboCount: number = 0;
@@ -195,6 +199,10 @@ export class HostController {
     // Get killer from last hitter map
     const killer = this.lastHitterMap.get(enemyId) || 'host';
 
+    // Check if this was a duo kill (both players contributed)
+    const hitters = this.dualHittersMap.get(enemyId);
+    const isDuoKill = hitters && hitters.size >= 2;
+
     // Broadcast death to guest
     const deathMessage: EnemyDeathMessage = {
       type: MessageType.ENEMY_DEATH,
@@ -209,11 +217,17 @@ export class HostController {
     // Emit kill feed event for local UI
     this.scene.events.emit('killFeedEntry', killer, enemy.texture.key);
 
+    // Show duo kill celebration if both players contributed
+    if (isDuoKill) {
+      this.showDuoKillNotification(enemy.x, enemy.y);
+    }
+
     // Update combo tracking
     this.updateCombo(killer, enemy.x, enemy.y);
 
     // Cleanup
     this.lastHitterMap.delete(enemyId);
+    this.dualHittersMap.delete(enemyId);
   }
 
   private updateCombo(killer: string, x: number, y: number): void {
@@ -291,11 +305,96 @@ export class HostController {
     this.comboTimer = 0;
   }
 
+  private showDuoKillNotification(x: number, y: number): void {
+    if (!this.scene || !this.scene.add) return;
+
+    // Broadcast to guest
+    const message: DuoKillMessage = {
+      type: MessageType.DUO_KILL,
+      enemyType: '',
+      x,
+      y,
+    };
+    networkManager.broadcast(message);
+
+    // Create visual effect
+    const container = this.scene.add.container(x, y - 50);
+    container.setDepth(160);
+
+    // Gradient background circle
+    const glow = this.scene.add.circle(0, 0, 40, 0xffdd44, 0.4);
+    container.add(glow);
+
+    // Main text
+    const text = this.scene.add.text(0, 0, 'DUO KILL!', {
+      fontSize: '18px',
+      fontFamily: 'Cinzel, Georgia, serif',
+      color: '#ffdd44',
+      stroke: '#000000',
+      strokeThickness: 3,
+    });
+    text.setOrigin(0.5);
+    container.add(text);
+
+    // Player icons
+    const hostIcon = this.scene.add.text(-35, 20, '⚔', { fontSize: '14px' });
+    hostIcon.setOrigin(0.5);
+    container.add(hostIcon);
+
+    const guestIcon = this.scene.add.text(35, 20, '⚔', { fontSize: '14px' });
+    guestIcon.setOrigin(0.5);
+    guestIcon.setTint(0x88aaff);
+    container.add(guestIcon);
+
+    // Animate
+    container.setScale(0);
+    this.scene.tweens.add({
+      targets: container,
+      scale: 1.3,
+      duration: 200,
+      ease: 'Back.easeOut',
+      onComplete: () => {
+        this.scene.tweens.add({
+          targets: container,
+          scale: 1,
+          duration: 150,
+        });
+        // Glow pulse
+        this.scene.tweens.add({
+          targets: glow,
+          scale: 2,
+          alpha: 0,
+          duration: 500,
+        });
+      },
+    });
+
+    // Fade out
+    this.scene.time.delayedCall(1500, () => {
+      this.scene.tweens.add({
+        targets: container,
+        y: y - 90,
+        alpha: 0,
+        duration: 500,
+        ease: 'Cubic.easeIn',
+        onComplete: () => {
+          if (container && container.active) container.destroy();
+        },
+      });
+    });
+  }
+
   // Called when host damages an enemy
   trackHostHit(enemy: Enemy): void {
     const enemyId = this.enemyIdMap.get(enemy);
     if (enemyId) {
       this.lastHitterMap.set(enemyId, 'host');
+
+      // Track for duo kill detection
+      if (!this.dualHittersMap.has(enemyId)) {
+        this.dualHittersMap.set(enemyId, new Set());
+      }
+      this.dualHittersMap.get(enemyId)!.add('host');
     }
   }
 
@@ -507,6 +606,12 @@ export class HostController {
 
     // Track that guest was the last hitter for kill attribution
     this.lastHitterMap.set(message.enemyId, 'guest');
+
+    // Track for duo kill detection
+    if (!this.dualHittersMap.has(message.enemyId)) {
+      this.dualHittersMap.set(message.enemyId, new Set());
+    }
+    this.dualHittersMap.get(message.enemyId)!.add('guest');
 
     // Find the enemy by network ID and apply damage
     for (const [enemy, id] of this.enemyIdMap) {

@@ -47,6 +47,9 @@ export enum MessageType {
 
   // Health pickup sync
   HEALTH_PICKUP = 'HEALTH_PICKUP',
+
+  // Duo kill celebration
+  DUO_KILL = 'DUO_KILL',
 }
 
 export interface PlayerPosMessage {
@@ -275,6 +278,13 @@ export interface HealthPickupMessage {
   y: number;
 }
 
+export interface DuoKillMessage {
+  type: MessageType.DUO_KILL;
+  enemyType: string;
+  x: number;
+  y: number;
+}
+
 export type SyncMessage =
   | PlayerPosMessage
   | PlayerAttackMessage
@@ -304,4 +314,5 @@ export type SyncMessage =
   | XpGainedMessage
   | EmoteMessage
   | LevelUpMessage
-  | HealthPickupMessage;
+  | HealthPickupMessage
+  | DuoKillMessage;

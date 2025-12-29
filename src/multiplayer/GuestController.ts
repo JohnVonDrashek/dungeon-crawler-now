@@ -28,6 +28,7 @@ import {
   EmoteMessage,
   LevelUpMessage,
   HealthPickupMessage,
+  DuoKillMessage,
   KillFeedEntry,
 } from './SyncMessages';
 import { RemotePlayer } from './RemotePlayer';
@@ -186,6 +187,9 @@ export class GuestController {
         break;
       case MessageType.HEALTH_PICKUP:
         this.handleHealthPickup(message as HealthPickupMessage);
+        break;
+      case MessageType.DUO_KILL:
+        this.handleDuoKill(message as DuoKillMessage);
         break;
       default:
         // Log unknown message types for debugging
@@ -1594,6 +1598,85 @@ export class GuestController {
       y: this.player.y,
     };
     networkManager.broadcast(message);
+  }
+
+  private handleDuoKill(message: DuoKillMessage): void {
+    if (!this.scene || !this.scene.add) return;
+
+    const x = typeof message.x === 'number' ? message.x : 0;
+    const y = typeof message.y === 'number' ? message.y : 0;
+
+    this.showDuoKillNotification(x, y);
+  }
+
+  private showDuoKillNotification(x: number, y: number): void {
+    if (!this.scene || !this.scene.add) return;
+
+    // Create visual effect (same as host)
+    const container = this.scene.add.container(x, y - 50);
+    container.setDepth(160);
+
+    // Gradient background circle
+    const glow = this.scene.add.circle(0, 0, 40, 0xffdd44, 0.4);
+    container.add(glow);
+
+    // Main text
+    const text = this.scene.add.text(0, 0, 'DUO KILL!', {
+      fontSize: '18px',
+      fontFamily: 'Cinzel, Georgia, serif',
+      color: '#ffdd44',
+      stroke: '#000000',
+      strokeThickness: 3,
+    });
+    text.setOrigin(0.5);
+    container.add(text);
+
+    // Player icons
+    const hostIcon = this.scene.add.text(-35, 20, '⚔', { fontSize: '14px' });
+    hostIcon.setOrigin(0.5);
+    hostIcon.setTint(0x88ff88); // Green for host in guest view
+    container.add(hostIcon);
+
+    const guestIcon = this.scene.add.text(35, 20, '⚔', { fontSize: '14px' });
+    guestIcon.setOrigin(0.5);
+    container.add(guestIcon);
+
+    // Animate
+    container.setScale(0);
+    this.scene.tweens.add({
+      targets: container,
+      scale: 1.3,
+      duration: 200,
+      ease: 'Back.easeOut',
+      onComplete: () => {
+        this.scene.tweens.add({
+          targets: container,
+          scale: 1,
+          duration: 150,
+        });
+        // Glow pulse
+        this.scene.tweens.add({
+          targets: glow,
+          scale: 2,
+          alpha: 0,
+          duration: 500,
+        });
+      },
+    });
+
+    // Fade out
+    this.scene.time.delayedCall(1500, () => {
+      this.scene.tweens.add({
+        targets: container,
+        y: y - 90,
+        alpha: 0,
+        duration: 500,
+        ease: 'Cubic.easeIn',
+        onComplete: () => {
+          if (container && container.active) container.destroy();
+        },
+      });
+    });
   }
 
   private showHealthPickupNotification(x: number, y: number, amount: number, playerId: string): void {
