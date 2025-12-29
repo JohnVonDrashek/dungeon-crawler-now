@@ -26,7 +26,7 @@ interface SessionInfo {
 const STORAGE_KEY = 'mplog_session';
 const AUTO_SAVE_INTERVAL = 5000; // Save to localStorage every 5 seconds
 const AUTO_SAVE_THRESHOLD = 10; // Also save every 10 new logs
-const LOG_SERVER_URL = 'http://localhost:3001/log';
+const LOG_SERVER_URL = 'http://localhost:9001/log';
 
 class MultiplayerDebugLogger {
   private logs: LogEntry[] = [];
@@ -67,9 +67,12 @@ class MultiplayerDebugLogger {
     // Set up keyboard shortcut
     this.setupKeyboardShortcut();
 
-    // Save on page unload
+    // Save on page unload - use sendBeacon for reliable delivery
     if (typeof window !== 'undefined') {
-      window.addEventListener('beforeunload', () => this.saveToStorage());
+      window.addEventListener('beforeunload', () => {
+        this.saveToStorage();
+        this.sendBeacon();
+      });
     }
   }
 
@@ -78,6 +81,10 @@ class MultiplayerDebugLogger {
 
     this.autoSaveTimer = setInterval(() => {
       this.saveToStorage();
+      // Also try to send to server periodically
+      if (this.roomCode) {
+        this.sendToServer().catch(() => {});
+      }
     }, AUTO_SAVE_INTERVAL);
   }
 
@@ -434,6 +441,23 @@ class MultiplayerDebugLogger {
       return false;
     } catch {
       // Server not running - silently fail
+      return false;
+    }
+  }
+
+  // Send logs via beacon (works during page unload)
+  sendBeacon(): boolean {
+    if (typeof navigator === 'undefined' || !navigator.sendBeacon) return false;
+
+    try {
+      const data = JSON.stringify({
+        roomCode: this.roomCode,
+        role: this.role,
+        sessionId: this.sessionId,
+        content: this.exportLogs(),
+      });
+      return navigator.sendBeacon(LOG_SERVER_URL, data);
+    } catch {
       return false;
     }
   }

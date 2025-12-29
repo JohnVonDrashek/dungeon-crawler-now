@@ -6,7 +6,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 
-const PORT = 3001;
+const PORT = 9001;
 const LOGS_DIR = path.join(__dirname, '..', 'logs');
 
 // Ensure logs directory exists
@@ -35,8 +35,9 @@ const server = http.createServer((req, res) => {
 
     req.on('end', () => {
       try {
+        // Handle both regular JSON and beacon requests (which send as text/plain)
         const data = JSON.parse(body);
-        const { roomCode, role, sessionId, content } = data;
+        const { roomCode, role, content } = data;
 
         // Generate filename
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);

@@ -104,6 +104,9 @@ export class HostController {
   private readonly ENEMY_UPDATE_INTERVAL_MS = 50; // 20 updates/sec
   private readonly HOST_STATE_INTERVAL_MS = 1000; // 1 update/sec
 
+  // Guest projectile physics group for collision detection
+  private guestProjectiles: Phaser.Physics.Arcade.Group | null = null;
+
   constructor(
     scene: Phaser.Scene,
     player: Player,
@@ -116,6 +119,7 @@ export class HostController {
     this.setupMessageHandlers();
     this.setupPeerHandlers();
     this.setupSceneEventHandlers();
+    this.setupGuestProjectiles();
 
     // If guest is already connected (from MenuScene), create remote player now
     if (networkManager.isConnected) {
@@ -139,6 +143,104 @@ export class HostController {
     this.scene.events.on('roomCleared', (roomId: number) => {
       this.broadcastRoomCleared(roomId);
     });
+  }
+
+  private setupGuestProjectiles(): void {
+    // Create physics group for guest projectiles
+    this.guestProjectiles = this.scene.physics.add.group({ runChildUpdate: true });
+
+    // Set up collision detection between guest projectiles and enemies
+    this.scene.physics.add.overlap(
+      this.guestProjectiles,
+      this.enemies,
+      this.handleGuestProjectileEnemyCollision.bind(this) as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
+      undefined,
+      this.scene
+    );
+
+    // Get wall layer from scene for projectile-wall collisions
+    // The wall layer should be available via a scene property or registry
+    const wallLayer = (this.scene as unknown as { wallLayer?: Phaser.Tilemaps.TilemapLayer }).wallLayer;
+    if (wallLayer) {
+      this.scene.physics.add.collider(
+        this.guestProjectiles,
+        wallLayer,
+        this.handleGuestProjectileWallCollision.bind(this) as Phaser.Types.Physics.Arcade.ArcadePhysicsCallback,
+        undefined,
+        this.scene
+      );
+    }
+  }
+
+  private handleGuestProjectileEnemyCollision(
+    projectileObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject,
+    enemyObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject
+  ): void {
+    const projectile = projectileObj as Phaser.Physics.Arcade.Sprite;
+    const enemy = enemyObj as unknown as Enemy;
+
+    if (!projectile.active || !enemy.active) return;
+
+    // Check if this projectile already hit this enemy (for piercing)
+    const hitEnemies: Set<Enemy> = projectile.getData('hitEnemies') || new Set();
+    if (hitEnemies.has(enemy)) return;
+    hitEnemies.add(enemy);
+    projectile.setData('hitEnemies', hitEnemies);
+
+    // Get damage from projectile data
+    const damage = projectile.getData('damage') || 10;
+
+    // Apply damage
+    enemy.takeDamage(damage);
+
+    // Track that guest hit this enemy (for kill attribution)
+    const networkId = (enemy as Enemy & { networkId?: string }).networkId;
+    if (networkId) {
+      this.lastHitterMap.set(networkId, 'guest');
+      const hitters = this.dualHittersMap.get(networkId) || new Set();
+      hitters.add('guest');
+      this.dualHittersMap.set(networkId, hitters);
+    }
+
+    // Show damage number locally
+    this.scene.events.emit('showDamageNumber', enemy.x, enemy.y, damage, false);
+
+    // Broadcast hit to guest for visual sync
+    this.broadcastGuestHit(enemy, damage);
+
+    // Handle piercing - destroy if not piercing
+    const isPiercing = projectile.getData('piercing');
+    if (!isPiercing) {
+      projectile.destroy();
+    }
+  }
+
+  private handleGuestProjectileWallCollision(
+    projectileObj: Phaser.Tilemaps.Tile | Phaser.GameObjects.GameObject
+  ): void {
+    const projectile = projectileObj as Phaser.Physics.Arcade.Sprite;
+    if (projectile.active) {
+      projectile.destroy();
+    }
+  }
+
+  private broadcastGuestHit(enemy: Enemy, damage: number): void {
+    const hitMessage: PlayerHitMessage = {
+      type: MessageType.PLAYER_HIT,
+      enemyId: (enemy as Enemy & { networkId?: string }).networkId || 'unknown',
+      damage: damage,
+    };
+    networkManager.broadcast(hitMessage);
+
+    // Also broadcast damage number for visual sync
+    const damageNumMessage: DamageNumberMessage = {
+      type: MessageType.DAMAGE_NUMBER,
+      x: enemy.x,
+      y: enemy.y,
+      damage: damage,
+      isPlayerDamage: false,
+    };
+    networkManager.broadcast(damageNumMessage);
   }
 
   private broadcastRoomCleared(roomId: number): void {
@@ -627,35 +729,161 @@ export class HostController {
   }
 
   private handleGuestAttack(message: PlayerAttackMessage): void {
-    // Render visual projectile for guest's attack
-    if (!this.remotePlayer || !this.scene) return;
+    // Create physics projectile for guest's attack so it can hit enemies
+    if (!this.remotePlayer || !this.scene || !this.guestProjectiles) return;
 
     // Validate angle is a number
     const angle = typeof message.angle === 'number' ? message.angle : 0;
-    const projectile = this.scene.add.sprite(message.x, message.y, 'projectile_wand');
-    projectile.setDepth(8);
-    projectile.setRotation(angle);
-    projectile.setTint(0x88aaff); // Blue tint for helper attacks
 
-    // Animate projectile moving in direction
-    const speed = 300;
-    const duration = 500;
-    this.scene.tweens.add({
-      targets: projectile,
-      x: message.x + Math.cos(angle) * speed,
-      y: message.y + Math.sin(angle) * speed,
-      alpha: 0,
-      duration: duration,
-      onComplete: () => {
-        // Safe destroy - check if sprite still exists
-        if (projectile && projectile.active) {
-          projectile.destroy();
-        }
-      },
+    // Get weapon-specific settings based on attack type
+    const attackType = message.attackType?.toLowerCase() || 'wand';
+
+    // Handle melee attacks (sword) differently - arc-based hit detection
+    if (attackType === 'sword') {
+      this.handleGuestMeleeAttack(message, angle);
+      return;
+    }
+
+    // Determine texture and settings based on attack type
+    let texture = 'projectile_wand';
+    let speed = 400;
+    let damage = 15; // Default guest damage
+    let isPiercing = false;
+
+    switch (attackType) {
+      case 'bow':
+        texture = 'projectile_arrow';
+        speed = 500;
+        damage = 18;
+        isPiercing = true;
+        break;
+      case 'staff':
+        texture = 'projectile_staff';
+        speed = 250;
+        damage = 20;
+        break;
+      case 'daggers':
+        texture = 'projectile_dagger';
+        speed = 450;
+        damage = 8;
+        break;
+      case 'wand':
+      default:
+        texture = 'projectile_wand';
+        speed = 400;
+        damage = 12;
+        break;
+    }
+
+    // Create physics-enabled projectile
+    const projectile = this.guestProjectiles.create(
+      message.x, message.y, texture
+    ) as Phaser.Physics.Arcade.Sprite;
+
+    projectile.setDepth(8);
+    projectile.setData('damage', damage);
+    projectile.setData('piercing', isPiercing);
+    projectile.setRotation(angle);
+    projectile.setTint(0x88aaff); // Blue tint for guest attacks
+    projectile.setVelocity(
+      Math.cos(angle) * speed,
+      Math.sin(angle) * speed
+    );
+
+    // Auto-destroy after 2 seconds
+    this.scene.time.delayedCall(2000, () => {
+      if (projectile.active) projectile.destroy();
     });
 
     // Visual feedback on remote player
     this.remotePlayer.applyAttack(message);
+
+    mpLog.debug('Host', 'Created guest projectile', { attackType, damage, angle });
+  }
+
+  private handleGuestMeleeAttack(message: PlayerAttackMessage, angle: number): void {
+    // Handle sword attack with arc-based hit detection
+    if (!this.scene) return;
+
+    const TILE_SIZE = 16; // Standard tile size
+    const slashRange = TILE_SIZE * 2 * 1.2; // Match sword range
+    const slashArc = Phaser.Math.DegToRad(90); // Match sword spread
+    const damage = 25; // Melee damage is higher
+
+    // Create visual slash effect
+    const slash = this.scene.add.sprite(
+      message.x + Math.cos(angle) * 20,
+      message.y + Math.sin(angle) * 20,
+      'projectile_sword'
+    );
+    slash.setDepth(15);
+    slash.setRotation(angle);
+    slash.setScale(1.2);
+    slash.setTint(0x88aaff); // Blue tint for guest
+
+    // Fade out the slash
+    this.scene.tweens.add({
+      targets: slash,
+      alpha: 0,
+      scale: 1.5,
+      duration: 150,
+      onComplete: () => slash.destroy(),
+    });
+
+    // Check for enemies in the arc
+    this.enemies.getChildren().forEach((child) => {
+      const enemy = child as unknown as Enemy;
+      if (!enemy.active) return;
+
+      const dist = Phaser.Math.Distance.Between(
+        message.x, message.y,
+        enemy.x, enemy.y
+      );
+
+      if (dist <= slashRange) {
+        const enemyAngle = Phaser.Math.Angle.Between(
+          message.x, message.y,
+          enemy.x, enemy.y
+        );
+
+        let angleDiff = Math.abs(angle - enemyAngle);
+        if (angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
+
+        if (angleDiff <= slashArc / 2) {
+          // Hit the enemy
+          enemy.takeDamage(damage);
+
+          // Track that guest hit this enemy
+          const networkId = (enemy as Enemy & { networkId?: string }).networkId;
+          if (networkId) {
+            this.lastHitterMap.set(networkId, 'guest');
+            const hitters = this.dualHittersMap.get(networkId) || new Set();
+            hitters.add('guest');
+            this.dualHittersMap.set(networkId, hitters);
+          }
+
+          // Show damage number locally
+          this.scene.events.emit('showDamageNumber', enemy.x, enemy.y, damage, false);
+
+          // Broadcast hit to guest
+          this.broadcastGuestHit(enemy, damage);
+
+          // Knockback
+          const knockbackForce = 150;
+          enemy.setVelocity(
+            Math.cos(enemyAngle) * knockbackForce,
+            Math.sin(enemyAngle) * knockbackForce
+          );
+
+          mpLog.debug('Host', 'Guest melee hit enemy', { networkId, damage });
+        }
+      }
+    });
+
+    // Visual feedback on remote player
+    if (this.remotePlayer) {
+      this.remotePlayer.applyAttack(message);
+    }
   }
 
   private handleGuestPickup(message: PickupMessage, _peerId: string): void {

@@ -7,6 +7,7 @@ import {
   SyncMessage,
   PlayerPosMessage,
   PlayerAttackMessage,
+  PlayerHitMessage,
   EnemyUpdateMessage,
   HostStateMessage,
   InventoryUpdateMessage,
@@ -150,6 +151,9 @@ export class GuestController {
       case MessageType.PLAYER_ATTACK:
         this.handleHostAttack(message as PlayerAttackMessage);
         break;
+      case MessageType.PLAYER_HIT:
+        this.handlePlayerHit(message as PlayerHitMessage);
+        break;
       case MessageType.ROOM_ACTIVATED:
         this.handleRoomActivated(message as RoomActivatedMessage);
         break;
@@ -237,6 +241,31 @@ export class GuestController {
 
     // Visual feedback on host player
     this.hostPlayer.applyAttack(message);
+  }
+
+  private handlePlayerHit(message: PlayerHitMessage): void {
+    // Handle hit event from host - this is sent when any player (host or guest) hits an enemy
+    // The host authoritative system already applied the damage, this is just for visual sync
+    if (!this.scene) return;
+
+    // Find the enemy by network ID and apply visual hit effect
+    const guestEnemy = this.guestEnemies.get(message.enemyId);
+    if (guestEnemy && guestEnemy.sprite && guestEnemy.sprite.active) {
+      // Flash the enemy sprite to show it was hit
+      this.scene.tweens.add({
+        targets: guestEnemy.sprite,
+        tint: 0xff0000,
+        duration: 100,
+        yoyo: true,
+        onComplete: () => {
+          if (guestEnemy.sprite && guestEnemy.sprite.active) {
+            guestEnemy.sprite.clearTint();
+          }
+        },
+      });
+
+      mpLog.debug('Guest', 'Applied hit effect to enemy', { enemyId: message.enemyId, damage: message.damage });
+    }
   }
 
   private handleEnemyUpdate(message: EnemyUpdateMessage): void {
