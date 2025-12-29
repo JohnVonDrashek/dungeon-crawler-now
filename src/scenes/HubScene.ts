@@ -1186,6 +1186,8 @@ export class HubScene extends BaseScene {
 
     // Clean up multiplayer
     this.remotePlayer?.destroy();
+    this.remotePlayer = null;
+    this.playerSync = null;
 
     // Clean up network message listener
     if (this.networkMessageListenerId) {

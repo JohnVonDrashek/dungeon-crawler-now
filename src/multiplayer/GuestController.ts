@@ -111,6 +111,9 @@ export class GuestController {
       case MessageType.ROOM_ACTIVATED:
         this.handleRoomActivated(message as RoomActivatedMessage);
         break;
+      default:
+        // Log unknown message types for debugging
+        console.debug('[GuestController] Unknown message type:', (message as SyncMessage).type);
     }
   }
 
@@ -124,7 +127,8 @@ export class GuestController {
     // Render visual projectile for host's attack
     if (!this.hostPlayer) return;
 
-    const angle = message.angle ?? 0;
+    // Validate angle is a number
+    const angle = typeof message.angle === 'number' ? message.angle : 0;
     const projectile = this.scene.add.sprite(message.x, message.y, 'projectile_wand');
     projectile.setDepth(8);
     projectile.setRotation(angle);
@@ -138,7 +142,12 @@ export class GuestController {
       y: message.y + Math.sin(angle) * speed,
       alpha: 0,
       duration: duration,
-      onComplete: () => projectile.destroy(),
+      onComplete: () => {
+        // Safe destroy - check if sprite still exists
+        if (projectile && projectile.active) {
+          projectile.destroy();
+        }
+      },
     });
 
     // Visual feedback on host player
@@ -159,11 +168,16 @@ export class GuestController {
       let guestEnemy = this.guestEnemies.get(enemyData.id);
 
       if (!guestEnemy) {
+        // Validate texture exists before creating sprite
+        const textureKey = this.scene.textures.exists(enemyData.texture)
+          ? enemyData.texture
+          : 'enemy'; // Fallback to default enemy texture
+
         // Create new enemy sprite with correct texture
         const sprite = this.scene.physics.add.sprite(
           enemyData.x,
           enemyData.y,
-          enemyData.texture
+          textureKey
         );
         sprite.setDepth(5);
         sprite.setPipeline('Light2D');
@@ -253,7 +267,8 @@ export class GuestController {
 
     const bar = guestEnemy.healthBar.getByName('bar') as Phaser.GameObjects.Rectangle;
     if (bar) {
-      const percent = guestEnemy.hp / guestEnemy.maxHp;
+      // Prevent division by zero
+      const percent = guestEnemy.maxHp > 0 ? guestEnemy.hp / guestEnemy.maxHp : 0;
       bar.width = 20 * Math.max(0, percent);
 
       // Color based on health
@@ -273,9 +288,13 @@ export class GuestController {
   }
 
   private handleInventoryUpdate(message: InventoryUpdateMessage): void {
-    this.player.inventory.deserialize(message.inventorySerialized);
-    this.player.gold = message.gold;
-    this.player.recalculateStats();
+    try {
+      this.player.inventory.deserialize(message.inventorySerialized);
+      this.player.gold = message.gold;
+      this.player.recalculateStats();
+    } catch (error) {
+      console.error('[GuestController] Failed to deserialize inventory:', error);
+    }
   }
 
   private handleRoomClear(_message: RoomClearMessage): void {
@@ -315,7 +334,7 @@ export class GuestController {
     this.player.setPosition(message.hostX + 20, message.hostY);
     this.player.setVelocity(0, 0);
 
-    // Visual feedback for teleport
+    // Visual feedback for teleport - with safe cleanup
     const flash = this.scene.add.circle(this.player.x, this.player.y, 30, 0x88aaff, 0.6);
     flash.setDepth(50);
     this.scene.tweens.add({
@@ -323,11 +342,16 @@ export class GuestController {
       alpha: 0,
       scale: 2,
       duration: 300,
-      onComplete: () => flash.destroy(),
+      onComplete: () => {
+        if (flash && flash.active) {
+          flash.destroy();
+        }
+      },
     });
   }
 
   private reconnectOverlay: Phaser.GameObjects.Container | null = null;
+  private reconnectDotTimer: Phaser.Time.TimerEvent | null = null;
 
   private onHostDisconnected(): void {
     // Check if we're reconnecting or truly disconnected
@@ -370,28 +394,37 @@ export class GuestController {
 
     this.reconnectOverlay.add([bg, text, subtext]);
 
-    // Animate dots
+    // Animate dots - store timer reference for cleanup
     let dots = 0;
-    const dotTimer = this.scene.time.addEvent({
+    this.reconnectDotTimer = this.scene.time.addEvent({
       delay: 500,
       loop: true,
       callback: () => {
         dots = (dots + 1) % 4;
-        subtext.setText('Attempting to reconnect' + '.'.repeat(dots));
+        if (subtext && subtext.active) {
+          subtext.setText('Attempting to reconnect' + '.'.repeat(dots));
+        }
       },
     });
 
     // Listen for connection state changes
     networkManager.onConnectionStateChange((state) => {
       if (state === 'connected') {
-        dotTimer.destroy();
+        this.cleanupReconnectTimer();
         this.hideReconnectUI();
       } else if (state === 'disconnected') {
-        dotTimer.destroy();
+        this.cleanupReconnectTimer();
         this.hideReconnectUI();
         this.showDisconnectedUI();
       }
     });
+  }
+
+  private cleanupReconnectTimer(): void {
+    if (this.reconnectDotTimer) {
+      this.reconnectDotTimer.destroy();
+      this.reconnectDotTimer = null;
+    }
   }
 
   private hideReconnectUI(): void {
@@ -449,9 +482,9 @@ export class GuestController {
 
     this.spectateOverlay.add([bg, text]);
 
-    // Follow host
+    // Follow host - use smooth follow for better camera movement
     if (this.hostPlayer) {
-      this.scene.cameras.main.startFollow(this.hostPlayer);
+      this.scene.cameras.main.startFollow(this.hostPlayer, true, 0.1, 0.1);
     }
   }
 
@@ -538,6 +571,16 @@ export class GuestController {
       networkManager.offMessage(this.messageListenerId);
       this.messageListenerId = null;
     }
+
+    // Clean up connection state callback to prevent ghost callbacks
+    networkManager.offConnectionStateChange();
+
+    // Clean up peer leave callback
+    networkManager.clearOnPeerLeave();
+
+    // Clean up reconnect timer
+    this.cleanupReconnectTimer();
+
     this.cleanup();
   }
 }

@@ -24,6 +24,8 @@ import {
   validateDamage,
   validateEnemyId,
   validatePositionDelta,
+  validatePosition,
+  MessageRateLimiter,
 } from './MessageValidator';
 
 export class HostController {
@@ -41,6 +43,9 @@ export class HostController {
 
   // Network listener ID for cleanup
   private messageListenerId: string | null = null;
+
+  // Rate limiter to prevent message flooding
+  private rateLimiter: MessageRateLimiter = new MessageRateLimiter();
 
   // Timers for periodic updates
   private enemyUpdateTimer: number = 0;
@@ -69,6 +74,12 @@ export class HostController {
 
   private setupMessageHandlers(): void {
     this.messageListenerId = networkManager.onMessage((message: SyncMessage, peerId: string) => {
+      // Rate limiting check
+      if (!this.rateLimiter.checkAllowed()) {
+        console.warn(`[HostController] Rate limited message from ${peerId}`);
+        return;
+      }
+
       // Validate message structure first
       const msgValidation = validateSyncMessage(message);
       if (!msgValidation.valid) {
@@ -92,6 +103,10 @@ export class HostController {
         case MessageType.PLAYER_ATTACK:
           this.handleGuestAttack(message as PlayerAttackMessage);
           break;
+
+        default:
+          // Log unknown message types for debugging
+          console.debug('[HostController] Unknown message type:', message.type);
       }
     });
   }
@@ -182,6 +197,13 @@ export class HostController {
   private handleGuestPosition(message: PlayerPosMessage): void {
     if (!this.remotePlayer) return;
 
+    // Validate position bounds
+    const boundsValidation = validatePosition(message.x, message.y);
+    if (!boundsValidation.valid) {
+      console.warn(`[HostController] Position bounds invalid: ${boundsValidation.reason}`);
+      return;
+    }
+
     // Validate position delta if we have a previous position
     if (this.lastGuestPosition) {
       const posValidation = validatePositionDelta(
@@ -191,7 +213,7 @@ export class HostController {
         message.y
       );
       if (!posValidation.valid) {
-        console.warn(`[HostController] Position validation failed: ${posValidation.reason}`);
+        console.warn(`[HostController] Position delta warning: ${posValidation.reason}`);
         // Don't reject completely - could be legitimate room transition
         // Just log the warning for now
       }
@@ -233,7 +255,8 @@ export class HostController {
     // Render visual projectile for guest's attack
     if (!this.remotePlayer) return;
 
-    const angle = message.angle ?? 0;
+    // Validate angle is a number
+    const angle = typeof message.angle === 'number' ? message.angle : 0;
     const projectile = this.scene.add.sprite(message.x, message.y, 'projectile_wand');
     projectile.setDepth(8);
     projectile.setRotation(angle);
@@ -248,7 +271,12 @@ export class HostController {
       y: message.y + Math.sin(angle) * speed,
       alpha: 0,
       duration: duration,
-      onComplete: () => projectile.destroy(),
+      onComplete: () => {
+        // Safe destroy - check if sprite still exists
+        if (projectile && projectile.active) {
+          projectile.destroy();
+        }
+      },
     });
 
     // Visual feedback on remote player
@@ -356,12 +384,18 @@ export class HostController {
   }
 
   sendHostState(): void {
+    // Validate player properties before sending
+    const hp = typeof this.player.hp === 'number' && !isNaN(this.player.hp) ? this.player.hp : 0;
+    const maxHp = typeof this.player.maxHp === 'number' && !isNaN(this.player.maxHp) ? this.player.maxHp : 100;
+    const level = typeof this.player.level === 'number' && !isNaN(this.player.level) ? this.player.level : 1;
+    const gold = typeof this.player.gold === 'number' && !isNaN(this.player.gold) ? this.player.gold : 0;
+
     const message: HostStateMessage = {
       type: MessageType.HOST_STATE,
-      hp: this.player.hp,
-      maxHp: this.player.maxHp,
-      level: this.player.level,
-      gold: this.player.gold,
+      hp,
+      maxHp,
+      level,
+      gold,
     };
 
     networkManager.broadcast(message);
@@ -410,8 +444,16 @@ export class HostController {
       networkManager.offMessage(this.messageListenerId);
       this.messageListenerId = null;
     }
+
+    // Clear peer callbacks to prevent ghost callbacks
+    networkManager.clearOnPeerJoin();
+    networkManager.clearOnPeerLeave();
+
     this.removeRemotePlayer();
     this.hideWaitingUI();
     this.enemyIdMap.clear();
+
+    // Reset rate limiter
+    this.rateLimiter.reset();
   }
 }

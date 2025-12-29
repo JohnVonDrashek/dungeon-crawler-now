@@ -2,6 +2,7 @@
 
 import { joinRoom, Room, selfId } from 'trystero';
 import { SyncMessage } from './SyncMessages';
+import { validateRoomCode } from './MessageValidator';
 
 export type ConnectionState = 'disconnected' | 'connecting' | 'waiting' | 'connected' | 'reconnecting';
 
@@ -217,7 +218,15 @@ export class NetworkManager {
   }
 
   async joinGame(roomCode: string): Promise<void> {
-    this._roomCode = roomCode.toUpperCase();
+    const normalizedCode = roomCode.toUpperCase();
+
+    // Validate room code format
+    const validation = validateRoomCode(normalizedCode);
+    if (!validation.valid) {
+      throw new Error(validation.reason || 'Invalid room code');
+    }
+
+    this._roomCode = normalizedCode;
     this._isHost = false;
     this.intentionalDisconnect = false;
     this.reconnectAttempts = 0;
@@ -282,6 +291,13 @@ export class NetworkManager {
   }
 
   /**
+   * Clear the onPeerLeave callback.
+   */
+  clearOnPeerLeave(): void {
+    this.onPeerLeaveCallback = null;
+  }
+
+  /**
    * Register a message handler.
    * @returns Listener ID for removal
    */
@@ -338,6 +354,12 @@ export class NetworkManager {
     this._roomCode = null;
     this.messageListeners.clear();
     this.reconnectAttempts = 0;
+
+    // Clear all callbacks to prevent ghost handlers
+    this.onPeerJoinCallback = null;
+    this.onPeerLeaveCallback = null;
+    this.onConnectionStateChangeCallback = null;
+
     this.setConnectionState('disconnected');
   }
 

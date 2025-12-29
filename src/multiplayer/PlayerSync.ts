@@ -31,13 +31,24 @@ export class PlayerSync {
     const x = this.player.x;
     const y = this.player.y;
     const facing = this.player.getFacingDirection();
-    const isMoving =
-      this.player.body?.velocity.x !== 0 || this.player.body?.velocity.y !== 0;
+
+    // Safe velocity check with proper null handling
+    const body = this.player.body as Phaser.Physics.Arcade.Body | null;
+    const isMoving = body
+      ? body.velocity.x !== 0 || body.velocity.y !== 0
+      : false;
 
     // Only send if position changed meaningfully
     const dx = Math.abs(x - this.lastSentX);
     const dy = Math.abs(y - this.lastSentY);
     const facingChanged = facing !== this.lastSentFacing;
+
+    // Validate position is within reasonable bounds (prevent sending garbage data)
+    const MAX_WORLD_SIZE = 10000;
+    if (x < 0 || x > MAX_WORLD_SIZE || y < 0 || y > MAX_WORLD_SIZE) {
+      console.warn('[PlayerSync] Position out of bounds, skipping sync');
+      return;
+    }
 
     if (
       dx > this.POSITION_THRESHOLD ||
@@ -46,8 +57,8 @@ export class PlayerSync {
     ) {
       const message: PlayerPosMessage = {
         type: MessageType.PLAYER_POS,
-        x,
-        y,
+        x: Math.round(x), // Round to reduce bandwidth
+        y: Math.round(y),
         facing,
         animState: isMoving ? 'walk' : 'idle',
         isMoving,
@@ -62,15 +73,16 @@ export class PlayerSync {
     }
   }
 
-  sendAttack(attackType: string, direction: string): void {
+  sendAttack(attackType: string, direction: string, angle?: number): void {
     if (!networkManager.isMultiplayer) return;
 
     const message: PlayerAttackMessage = {
       type: MessageType.PLAYER_ATTACK,
       attackType,
       direction,
-      x: this.player.x,
-      y: this.player.y,
+      x: Math.round(this.player.x),
+      y: Math.round(this.player.y),
+      angle: typeof angle === 'number' && !isNaN(angle) ? angle : undefined,
     };
 
     networkManager.broadcast(message);
@@ -79,10 +91,16 @@ export class PlayerSync {
   sendHit(enemyId: string, damage: number): void {
     if (!networkManager.isMultiplayer) return;
 
+    // Validate inputs
+    if (!enemyId || typeof damage !== 'number' || damage < 0) {
+      console.warn('[PlayerSync] Invalid hit data:', { enemyId, damage });
+      return;
+    }
+
     const message: PlayerHitMessage = {
       type: MessageType.PLAYER_HIT,
       enemyId,
-      damage,
+      damage: Math.floor(damage), // Ensure integer damage
     };
 
     networkManager.broadcast(message);

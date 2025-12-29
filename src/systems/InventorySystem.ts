@@ -146,12 +146,23 @@ export class InventorySystem {
   }
 
   deserialize(data: string): void {
-    const parsed = JSON.parse(data);
-    this.items = parsed.items || [];
-    this.equipment = parsed.equipment || {
-      weapon: null,
-      armor: null,
-      accessory: null,
-    };
+    try {
+      const parsed = JSON.parse(data);
+      this.items = Array.isArray(parsed.items) ? parsed.items : [];
+      this.equipment = parsed.equipment && typeof parsed.equipment === 'object'
+        ? {
+            weapon: parsed.equipment.weapon || null,
+            armor: parsed.equipment.armor || null,
+            accessory: parsed.equipment.accessory || null,
+          }
+        : {
+            weapon: null,
+            armor: null,
+            accessory: null,
+          };
+    } catch (error) {
+      console.error('[InventorySystem] Failed to deserialize inventory:', error);
+      // Keep current state on error
+    }
   }
 }
