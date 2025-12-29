@@ -26,6 +26,7 @@ import {
   PingMarkerMessage,
   XpGainedMessage,
   EmoteMessage,
+  LevelUpMessage,
 } from './SyncMessages';
 import { RemotePlayer } from './RemotePlayer';
 import { Player } from '../entities/Player';
@@ -354,6 +355,10 @@ export class HostController {
 
         case MessageType.EMOTE:
           this.handleGuestEmote(message as EmoteMessage);
+          break;
+
+        case MessageType.LEVEL_UP:
+          this.handleGuestLevelUp(message as LevelUpMessage);
           break;
 
         default:
@@ -1245,6 +1250,106 @@ export class HostController {
 
     // Show local XP notification
     this.showXpNotification(amount, x, y);
+  }
+
+  // Broadcast host level-up to guest
+  broadcastLevelUp(newLevel: number): void {
+    const message: LevelUpMessage = {
+      type: MessageType.LEVEL_UP,
+      playerId: 'host',
+      newLevel,
+      x: this.player.x,
+      y: this.player.y,
+    };
+    networkManager.broadcast(message);
+
+    // Show local level-up notification
+    this.showLevelUpNotification('host', newLevel, this.player.x, this.player.y);
+  }
+
+  private handleGuestLevelUp(message: LevelUpMessage): void {
+    if (!this.remotePlayer || !this.scene) return;
+
+    const level = typeof message.newLevel === 'number' ? message.newLevel : 1;
+    const x = typeof message.x === 'number' ? message.x : this.remotePlayer.x;
+    const y = typeof message.y === 'number' ? message.y : this.remotePlayer.y;
+
+    this.showLevelUpNotification('guest', level, x, y);
+  }
+
+  private showLevelUpNotification(playerId: string, level: number, x: number, y: number): void {
+    if (!this.scene || !this.scene.add) return;
+
+    const isHost = playerId === 'host';
+    const color = isHost ? '#ffdd44' : '#88aaff';
+    const label = isHost ? 'HOST' : 'HELPER';
+
+    // Create container for level-up effect
+    const container = this.scene.add.container(x, y - 60);
+    container.setDepth(150);
+
+    // Glow ring
+    const ring = this.scene.add.circle(0, 0, 40, isHost ? 0xffdd44 : 0x88aaff, 0.3);
+    container.add(ring);
+
+    // Level text
+    const levelText = this.scene.add.text(0, 0, `LEVEL ${level}!`, {
+      fontSize: '18px',
+      fontFamily: 'Cinzel, Georgia, serif',
+      color: color,
+      stroke: '#000000',
+      strokeThickness: 3,
+    });
+    levelText.setOrigin(0.5);
+    container.add(levelText);
+
+    // Player label
+    const labelText = this.scene.add.text(0, -25, label, {
+      fontSize: '10px',
+      fontFamily: 'Roboto Mono',
+      color: color,
+      stroke: '#000000',
+      strokeThickness: 2,
+    });
+    labelText.setOrigin(0.5);
+    container.add(labelText);
+
+    // Animate: expand ring, pop text, then fade
+    container.setScale(0);
+    this.scene.tweens.add({
+      targets: container,
+      scale: 1.3,
+      duration: 200,
+      ease: 'Back.easeOut',
+      onComplete: () => {
+        this.scene.tweens.add({
+          targets: container,
+          scale: 1,
+          duration: 100,
+        });
+        // Expand ring
+        this.scene.tweens.add({
+          targets: ring,
+          scale: 2,
+          alpha: 0,
+          duration: 600,
+        });
+      },
+    });
+
+    // Fade out after holding
+    this.scene.time.delayedCall(2000, () => {
+      this.scene.tweens.add({
+        targets: container,
+        y: y - 100,
+        alpha: 0,
+        duration: 500,
+        ease: 'Cubic.easeIn',
+        onComplete: () => {
+          if (container && container.active) container.destroy();
+        },
+      });
+    });
   }
 
   private showXpNotification(amount: number, x: number, y: number): void {

@@ -38,6 +38,12 @@ export enum MessageType {
 
   // Shared XP system
   XP_GAINED = 'XP_GAINED',
+
+  // Quick emotes
+  EMOTE = 'EMOTE',
+
+  // Level up sync
+  LEVEL_UP = 'LEVEL_UP',
 }
 
 export interface PlayerPosMessage {
@@ -240,6 +246,22 @@ export interface XpGainedMessage {
   xpToNext: number;
 }
 
+export interface EmoteMessage {
+  type: MessageType.EMOTE;
+  senderId: string;
+  emoteType: 'wave' | 'thumbsUp' | 'help' | 'follow' | 'wait' | 'cheer';
+  x: number;
+  y: number;
+}
+
+export interface LevelUpMessage {
+  type: MessageType.LEVEL_UP;
+  playerId: string;
+  newLevel: number;
+  x: number;
+  y: number;
+}
+
 export type SyncMessage =
   | PlayerPosMessage
   | PlayerAttackMessage
@@ -266,4 +288,6 @@ export type SyncMessage =
   | ReviveProgressMessage
   | ReviveCompleteMessage
   | PingMarkerMessage
-  | XpGainedMessage;
+  | XpGainedMessage
+  | EmoteMessage
+  | LevelUpMessage;

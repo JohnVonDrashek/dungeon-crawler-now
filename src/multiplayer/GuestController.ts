@@ -26,6 +26,7 @@ import {
   PingMarkerMessage,
   XpGainedMessage,
   EmoteMessage,
+  LevelUpMessage,
   KillFeedEntry,
 } from './SyncMessages';
 import { RemotePlayer } from './RemotePlayer';
@@ -178,6 +179,9 @@ export class GuestController {
         break;
       case MessageType.EMOTE:
         this.handleEmote(message as EmoteMessage);
+        break;
+      case MessageType.LEVEL_UP:
+        this.handleLevelUp(message as LevelUpMessage);
         break;
       default:
         // Log unknown message types for debugging
@@ -1536,6 +1540,107 @@ export class GuestController {
       onComplete: () => {
         if (text && text.active) text.destroy();
       },
+    });
+  }
+
+  private handleLevelUp(message: LevelUpMessage): void {
+    if (!this.scene || !this.scene.add) return;
+
+    const level = typeof message.newLevel === 'number' ? message.newLevel : 1;
+    const x = typeof message.x === 'number' ? message.x : 0;
+    const y = typeof message.y === 'number' ? message.y : 0;
+
+    this.showLevelUpNotification(message.playerId, level, x, y);
+  }
+
+  // Broadcast guest level-up to host
+  broadcastLevelUp(newLevel: number): void {
+    const message: LevelUpMessage = {
+      type: MessageType.LEVEL_UP,
+      playerId: 'guest',
+      newLevel,
+      x: this.player.x,
+      y: this.player.y,
+    };
+    networkManager.broadcast(message);
+
+    // Show local level-up notification
+    this.showLevelUpNotification('guest', newLevel, this.player.x, this.player.y);
+  }
+
+  private showLevelUpNotification(playerId: string, level: number, x: number, y: number): void {
+    if (!this.scene || !this.scene.add) return;
+
+    const isHost = playerId === 'host';
+    // For guest, host is green, guest is blue
+    const color = isHost ? '#88ff88' : '#ffdd44';
+    const label = isHost ? 'HOST' : 'YOU';
+
+    // Create container for level-up effect
+    const container = this.scene.add.container(x, y - 60);
+    container.setDepth(150);
+
+    // Glow ring
+    const ring = this.scene.add.circle(0, 0, 40, isHost ? 0x88ff88 : 0xffdd44, 0.3);
+    container.add(ring);
+
+    // Level text
+    const levelText = this.scene.add.text(0, 0, `LEVEL ${level}!`, {
+      fontSize: '18px',
+      fontFamily: 'Cinzel, Georgia, serif',
+      color: color,
+      stroke: '#000000',
+      strokeThickness: 3,
+    });
+    levelText.setOrigin(0.5);
+    container.add(levelText);
+
+    // Player label
+    const labelText = this.scene.add.text(0, -25, label, {
+      fontSize: '10px',
+      fontFamily: 'Roboto Mono',
+      color: color,
+      stroke: '#000000',
+      strokeThickness: 2,
+    });
+    labelText.setOrigin(0.5);
+    container.add(labelText);
+
+    // Animate: expand ring, pop text, then fade
+    container.setScale(0);
+    this.scene.tweens.add({
+      targets: container,
+      scale: 1.3,
+      duration: 200,
+      ease: 'Back.easeOut',
+      onComplete: () => {
+        this.scene.tweens.add({
+          targets: container,
+          scale: 1,
+          duration: 100,
+        });
+        // Expand ring
+        this.scene.tweens.add({
+          targets: ring,
+          scale: 2,
+          alpha: 0,
+          duration: 600,
+        });
+      },
+    });
+
+    // Fade out after holding
+    this.scene.time.delayedCall(2000, () => {
+      this.scene.tweens.add({
+        targets: container,
+        y: y - 100,
+        alpha: 0,
+        duration: 500,
+        ease: 'Cubic.easeIn',
+        onComplete: () => {
+          if (container && container.active) container.destroy();
+        },
+      });
     });
   }
 
