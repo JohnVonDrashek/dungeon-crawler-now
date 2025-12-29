@@ -9,7 +9,7 @@ Calculate damage from one entity to another.
 - `attacker: Entity` - Entity dealing damage
 - `target: Entity` - Entity receiving damage
 
-**Returns:** `{ damage: number, isCrit: boolean, blocked: boolean }`
+**Returns:** `{ damage: number, isCritical: boolean, knockbackX: number, knockbackY: number }`
 
 ---
 
@@ -82,8 +82,8 @@ Add item to inventory. Returns false if full.
 ### `removeItem(itemId): Item | null`
 Remove and return item by ID.
 
-### `equipItem(item): Item | null`
-Equip item, return previously equipped item.
+### `equipItem(itemId): Item | null`
+Equip item by ID, return previously equipped item.
 
 ### `getEquipmentStats(): ItemStats`
 Get combined stats from all equipped items.
