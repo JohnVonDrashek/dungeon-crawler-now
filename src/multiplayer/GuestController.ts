@@ -24,6 +24,7 @@ import {
   ReviveProgressMessage,
   ReviveCompleteMessage,
   PingMarkerMessage,
+  XpGainedMessage,
   KillFeedEntry,
 } from './SyncMessages';
 import { RemotePlayer } from './RemotePlayer';
@@ -75,6 +76,12 @@ export class GuestController {
   private proximityBuffUI: Phaser.GameObjects.Container | null = null;
   private readonly PROXIMITY_BUFF_DISTANCE = 100;
   private readonly PROXIMITY_BUFF_MULTIPLIER = 1.15;
+
+  // Distance tether warning
+  private isTooFar: boolean = false;
+  private tetherWarningUI: Phaser.GameObjects.Container | null = null;
+  private tetherLine: Phaser.GameObjects.Graphics | null = null;
+  private readonly TETHER_WARNING_DISTANCE = 250;
 
   constructor(scene: Phaser.Scene, player: Player) {
     this.scene = scene;
@@ -164,6 +171,9 @@ export class GuestController {
         break;
       case MessageType.REVIVE_COMPLETE:
         this.handleReviveComplete(message as ReviveCompleteMessage);
+        break;
+      case MessageType.XP_GAINED:
+        this.handleXpGained(message as XpGainedMessage);
         break;
       default:
         // Log unknown message types for debugging
@@ -1304,6 +1314,135 @@ export class GuestController {
 
     // Proximity buff check
     this.updateProximityBuff();
+
+    // Distance tether check
+    this.updateDistanceTether();
+  }
+
+  private updateDistanceTether(): void {
+    if (!this.hostPlayer) {
+      this.hideTetherWarning();
+      return;
+    }
+
+    const dist = Phaser.Math.Distance.Between(
+      this.player.x,
+      this.player.y,
+      this.hostPlayer.x,
+      this.hostPlayer.y
+    );
+
+    // Update tether line
+    this.updateTetherLine(dist);
+
+    if (dist >= this.TETHER_WARNING_DISTANCE && !this.isTooFar) {
+      this.isTooFar = true;
+      this.showTetherWarning();
+    } else if (dist < this.TETHER_WARNING_DISTANCE && this.isTooFar) {
+      this.isTooFar = false;
+      this.hideTetherWarning();
+    }
+  }
+
+  private updateTetherLine(dist: number): void {
+    if (!this.hostPlayer || !this.scene || !this.scene.add) return;
+
+    // Only show line when getting far
+    if (dist < this.TETHER_WARNING_DISTANCE * 0.8) {
+      if (this.tetherLine) {
+        this.tetherLine.destroy();
+        this.tetherLine = null;
+      }
+      return;
+    }
+
+    if (!this.tetherLine) {
+      this.tetherLine = this.scene.add.graphics();
+      this.tetherLine.setDepth(5);
+    }
+
+    this.tetherLine.clear();
+
+    const warningRatio = Math.min(1, (dist - this.TETHER_WARNING_DISTANCE * 0.8) /
+      (this.TETHER_WARNING_DISTANCE * 0.6));
+    const alpha = 0.2 + warningRatio * 0.4;
+    const color = warningRatio < 0.5 ? 0xffaa00 : 0xff4444;
+
+    this.tetherLine.lineStyle(2, color, alpha);
+    this.tetherLine.beginPath();
+    this.tetherLine.moveTo(this.player.x, this.player.y);
+    this.tetherLine.lineTo(this.hostPlayer.x, this.hostPlayer.y);
+    this.tetherLine.strokePath();
+  }
+
+  private showTetherWarning(): void {
+    if (this.tetherWarningUI || !this.scene || !this.scene.add) return;
+
+    const cam = this.scene.cameras.main;
+    this.tetherWarningUI = this.scene.add.container(cam.width / 2, 60);
+    this.tetherWarningUI.setScrollFactor(0);
+    this.tetherWarningUI.setDepth(100);
+
+    const bg = this.scene.add.rectangle(0, 0, 200, 30, 0x000000, 0.7);
+    bg.setStrokeStyle(1, 0xff4444);
+    this.tetherWarningUI.add(bg);
+
+    const text = this.scene.add.text(0, 0, '⚠ TOO FAR FROM HOST!', {
+      fontSize: '11px',
+      fontFamily: 'Roboto Mono',
+      color: '#ff4444',
+    });
+    text.setOrigin(0.5);
+    this.tetherWarningUI.add(text);
+
+    this.scene.tweens.add({
+      targets: bg,
+      alpha: 0.4,
+      duration: 500,
+      yoyo: true,
+      repeat: -1,
+    });
+  }
+
+  private hideTetherWarning(): void {
+    if (this.tetherWarningUI) {
+      this.tetherWarningUI.destroy();
+      this.tetherWarningUI = null;
+    }
+    if (this.tetherLine) {
+      this.tetherLine.destroy();
+      this.tetherLine = null;
+    }
+  }
+
+  private handleXpGained(message: XpGainedMessage): void {
+    if (!this.scene || !this.scene.add) return;
+
+    const x = typeof message.x === 'number' ? message.x : 0;
+    const y = typeof message.y === 'number' ? message.y : 0;
+    const amount = typeof message.amount === 'number' ? message.amount : 0;
+
+    // Show XP notification
+    const text = this.scene.add.text(x, y - 20, `+${amount} XP`, {
+      fontSize: '12px',
+      fontFamily: 'Roboto Mono',
+      color: '#aaddff',
+      stroke: '#000000',
+      strokeThickness: 2,
+    });
+    text.setOrigin(0.5);
+    text.setDepth(100);
+
+    this.scene.tweens.add({
+      targets: text,
+      y: y - 50,
+      alpha: 0,
+      duration: 1000,
+      ease: 'Cubic.easeOut',
+      onComplete: () => {
+        if (text && text.active) text.destroy();
+      },
+    });
   }
 
   private updateEnemyInterpolation(): void {

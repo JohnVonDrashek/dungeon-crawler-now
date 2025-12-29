@@ -35,6 +35,9 @@ export enum MessageType {
 
   // Co-op ping system
   PING_MARKER = 'PING_MARKER',
+
+  // Shared XP system
+  XP_GAINED = 'XP_GAINED',
 }
 
 export interface PlayerPosMessage {
@@ -227,6 +230,16 @@ export interface PingMarkerMessage {
   pingType: 'alert' | 'move' | 'enemy';
 }
 
+export interface XpGainedMessage {
+  type: MessageType.XP_GAINED;
+  amount: number;
+  enemyType: string;
+  x: number;
+  y: number;
+  totalXp: number;
+  xpToNext: number;
+}
+
 export type SyncMessage =
   | PlayerPosMessage
   | PlayerAttackMessage
@@ -252,4 +265,5 @@ export type SyncMessage =
   | PlayerDownedMessage
   | ReviveProgressMessage
   | ReviveCompleteMessage
-  | PingMarkerMessage;
+  | PingMarkerMessage
+  | XpGainedMessage;

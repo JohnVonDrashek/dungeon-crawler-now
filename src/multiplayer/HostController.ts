@@ -24,6 +24,7 @@ import {
   ReviveProgressMessage,
   ReviveCompleteMessage,
   PingMarkerMessage,
+  XpGainedMessage,
 } from './SyncMessages';
 import { RemotePlayer } from './RemotePlayer';
 import { Player } from '../entities/Player';
@@ -72,6 +73,13 @@ export class HostController {
   private proximityBuffUI: Phaser.GameObjects.Container | null = null;
   private readonly PROXIMITY_BUFF_DISTANCE = 100;
   private readonly PROXIMITY_BUFF_MULTIPLIER = 1.15; // 15% damage boost
+
+  // Distance tether warning
+  private isTooFar: boolean = false;
+  private tetherWarningUI: Phaser.GameObjects.Container | null = null;
+  private tetherLine: Phaser.GameObjects.Graphics | null = null;
+  private readonly TETHER_WARNING_DISTANCE = 250;
+  private readonly TETHER_MAX_DISTANCE = 400;
 
   // Track last known guest position for validation
   private lastGuestPosition: { x: number; y: number } | null = null;
@@ -757,6 +765,9 @@ export class HostController {
     // Proximity buff check
     this.updateProximityBuff();
 
+    // Distance tether check
+    this.updateDistanceTether();
+
     // Periodic enemy updates
     this.enemyUpdateTimer += delta;
     if (this.enemyUpdateTimer >= this.ENEMY_UPDATE_INTERVAL_MS) {
@@ -1022,6 +1033,148 @@ export class HostController {
 
   isProximityBuffActive(): boolean {
     return this.proximityBuffActive;
+  }
+
+  private updateDistanceTether(): void {
+    if (!this.remotePlayer) {
+      this.hideTetherWarning();
+      return;
+    }
+
+    const dist = Phaser.Math.Distance.Between(
+      this.player.x,
+      this.player.y,
+      this.remotePlayer.x,
+      this.remotePlayer.y
+    );
+
+    // Update tether line
+    this.updateTetherLine(dist);
+
+    if (dist >= this.TETHER_WARNING_DISTANCE && !this.isTooFar) {
+      this.isTooFar = true;
+      this.showTetherWarning();
+    } else if (dist < this.TETHER_WARNING_DISTANCE && this.isTooFar) {
+      this.isTooFar = false;
+      this.hideTetherWarning();
+    }
+  }
+
+  private updateTetherLine(dist: number): void {
+    if (!this.remotePlayer || !this.scene || !this.scene.add) return;
+
+    // Only show line when getting far
+    if (dist < this.TETHER_WARNING_DISTANCE * 0.8) {
+      if (this.tetherLine) {
+        this.tetherLine.destroy();
+        this.tetherLine = null;
+      }
+      return;
+    }
+
+    if (!this.tetherLine) {
+      this.tetherLine = this.scene.add.graphics();
+      this.tetherLine.setDepth(5);
+    }
+
+    this.tetherLine.clear();
+
+    // Color based on distance
+    const warningRatio = Math.min(1, (dist - this.TETHER_WARNING_DISTANCE * 0.8) /
+      (this.TETHER_MAX_DISTANCE - this.TETHER_WARNING_DISTANCE * 0.8));
+    const alpha = 0.2 + warningRatio * 0.4;
+
+    // Gradient from yellow to red
+    const color = warningRatio < 0.5 ? 0xffaa00 : 0xff4444;
+
+    this.tetherLine.lineStyle(2, color, alpha);
+    this.tetherLine.beginPath();
+    this.tetherLine.moveTo(this.player.x, this.player.y);
+    this.tetherLine.lineTo(this.remotePlayer.x, this.remotePlayer.y);
+    this.tetherLine.strokePath();
+  }
+
+  private showTetherWarning(): void {
+    if (this.tetherWarningUI || !this.scene || !this.scene.add) return;
+
+    const cam = this.scene.cameras.main;
+    this.tetherWarningUI = this.scene.add.container(cam.width / 2, 60);
+    this.tetherWarningUI.setScrollFactor(0);
+    this.tetherWarningUI.setDepth(100);
+
+    const bg = this.scene.add.rectangle(0, 0, 200, 30, 0x000000, 0.7);
+    bg.setStrokeStyle(1, 0xff4444);
+    this.tetherWarningUI.add(bg);
+
+    const text = this.scene.add.text(0, 0, '⚠ TOO FAR FROM PARTNER!', {
+      fontSize: '11px',
+      fontFamily: 'Roboto Mono',
+      color: '#ff4444',
+    });
+    text.setOrigin(0.5);
+    this.tetherWarningUI.add(text);
+
+    // Pulse animation
+    this.scene.tweens.add({
+      targets: bg,
+      alpha: 0.4,
+      duration: 500,
+      yoyo: true,
+      repeat: -1,
+    });
+  }
+
+  private hideTetherWarning(): void {
+    if (this.tetherWarningUI) {
+      this.tetherWarningUI.destroy();
+      this.tetherWarningUI = null;
+    }
+    if (this.tetherLine) {
+      this.tetherLine.destroy();
+      this.tetherLine = null;
+    }
+  }
+
+  // Broadcast XP gain to guest
+  broadcastXpGain(amount: number, enemyType: string, x: number, y: number): void {
+    const message: XpGainedMessage = {
+      type: MessageType.XP_GAINED,
+      amount,
+      enemyType,
+      x,
+      y,
+      totalXp: this.player.xp,
+      xpToNext: this.player.xpToNextLevel,
+    };
+    networkManager.broadcast(message);
+
+    // Show local XP notification
+    this.showXpNotification(amount, x, y);
+  }
+
+  private showXpNotification(amount: number, x: number, y: number): void {
+    if (!this.scene || !this.scene.add) return;
+
+    const text = this.scene.add.text(x, y - 20, `+${amount} XP`, {
+      fontSize: '12px',
+      fontFamily: 'Roboto Mono',
+      color: '#aaddff',
+      stroke: '#000000',
+      strokeThickness: 2,
+    });
+    text.setOrigin(0.5);
+    text.setDepth(100);
+
+    this.scene.tweens.add({
+      targets: text,
+      y: y - 50,
+      alpha: 0,
+      duration: 1000,
+      ease: 'Cubic.easeOut',
+      onComplete: () => {
+        if (text && text.active) text.destroy();
+      },
+    });
   }
 
   registerEnemy(enemy: Enemy): string {
