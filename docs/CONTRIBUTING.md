@@ -60,15 +60,17 @@ calculateDamage(attacker: Entity, target: Entity): DamageResult {
 
 ## Testing
 
-Run tests with:
-```bash
-npm test
-```
+> **Note:** Testing is not yet configured for this project. A testing framework (likely Vitest or Jest) is planned for future implementation.
 
-Write tests for:
+When testing is set up, prioritize writing tests for:
 - Pure functions (damage calculations, loot generation)
 - State transitions (save/load, progression)
 - Edge cases (empty inventory, max stats)
+
+For now, manually verify changes by:
+1. Running the development server (`npm run dev`)
+2. Testing affected gameplay systems in-browser
+3. Ensuring `npm run build` completes without errors
 
 ## Commit Messages
 
@@ -87,3 +89,5 @@ Follow conventional commits:
 3. Ensure `npm run build` passes
 4. Update documentation if needed
 5. Request review
+6. Address review feedback with additional commits (avoid force-pushing during review)
+7. Once approved, squash and merge to `main`
