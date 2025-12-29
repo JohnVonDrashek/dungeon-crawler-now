@@ -19,6 +19,7 @@ import {
   LootSpawnMessage,
   DamageNumberMessage,
   RoomClearMessage,
+  ComboUpdateMessage,
 } from './SyncMessages';
 import { RemotePlayer } from './RemotePlayer';
 import { Player } from '../entities/Player';
@@ -44,6 +45,11 @@ export class HostController {
 
   // Track last hitter for kill attribution
   private lastHitterMap: Map<string, 'host' | 'guest'> = new Map();
+
+  // Co-op combo tracking
+  private comboCount: number = 0;
+  private comboTimer: number = 0;
+  private readonly COMBO_TIMEOUT_MS = 2500; // 2.5 seconds to maintain combo
 
   // Track last known guest position for validation
   private lastGuestPosition: { x: number; y: number } | null = null;
@@ -170,8 +176,86 @@ export class HostController {
     // Emit kill feed event for local UI
     this.scene.events.emit('killFeedEntry', killer, enemy.texture.key);
 
+    // Update combo tracking
+    this.updateCombo(killer, enemy.x, enemy.y);
+
     // Cleanup
     this.lastHitterMap.delete(enemyId);
+  }
+
+  private updateCombo(killer: string, x: number, y: number): void {
+    // Increment combo
+    this.comboCount++;
+    this.comboTimer = this.COMBO_TIMEOUT_MS;
+
+    // Only show combo notification for 2+ kills
+    if (this.comboCount >= 2) {
+      // Broadcast combo update to guest
+      const comboMessage: ComboUpdateMessage = {
+        type: MessageType.COMBO_UPDATE,
+        count: this.comboCount,
+        lastKiller: killer,
+        x,
+        y,
+      };
+      networkManager.broadcast(comboMessage);
+
+      // Show combo notification locally
+      this.showComboNotification(this.comboCount, killer, x, y);
+    }
+  }
+
+  private showComboNotification(count: number, killer: string, x: number, y: number): void {
+    if (!this.scene || !this.scene.add) return;
+
+    // Color based on who got the kill
+    const color = killer === 'host' ? '#ffdd44' : '#88aaff';
+    const comboText = count >= 5 ? `${count}x MEGA COMBO!` : `${count}x COMBO!`;
+
+    const text = this.scene.add.text(x, y - 40, comboText, {
+      fontSize: count >= 5 ? '20px' : '16px',
+      fontFamily: 'Cinzel, Georgia, serif',
+      color: color,
+      stroke: '#000000',
+      strokeThickness: 3,
+    });
+    text.setOrigin(0.5);
+    text.setDepth(150);
+
+    // Animate: scale up, hold, fade out
+    text.setScale(0.5);
+    this.scene.tweens.add({
+      targets: text,
+      scale: 1.2,
+      duration: 150,
+      ease: 'Back.easeOut',
+      onComplete: () => {
+        this.scene.tweens.add({
+          targets: text,
+          scale: 1,
+          duration: 100,
+          onComplete: () => {
+            this.scene.time.delayedCall(500, () => {
+              this.scene.tweens.add({
+                targets: text,
+                y: y - 60,
+                alpha: 0,
+                duration: 400,
+                ease: 'Cubic.easeIn',
+                onComplete: () => {
+                  if (text && text.active) text.destroy();
+                },
+              });
+            });
+          },
+        });
+      },
+    });
+  }
+
+  private resetCombo(): void {
+    this.comboCount = 0;
+    this.comboTimer = 0;
   }
 
   // Called when host damages an enemy
@@ -482,6 +566,14 @@ export class HostController {
           enemy.setSecondaryTarget(guestPos);
         }
       });
+    }
+
+    // Combo timeout tracking
+    if (this.comboTimer > 0) {
+      this.comboTimer -= delta;
+      if (this.comboTimer <= 0) {
+        this.resetCombo();
+      }
     }
 
     // Periodic enemy updates

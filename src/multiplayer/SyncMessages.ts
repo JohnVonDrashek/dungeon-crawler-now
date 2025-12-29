@@ -24,6 +24,9 @@ export enum MessageType {
   PICKUP = 'PICKUP',
   EQUIP_ITEM = 'EQUIP_ITEM',
   USE_ITEM = 'USE_ITEM',
+
+  // Co-op combo system
+  COMBO_UPDATE = 'COMBO_UPDATE',
 }
 
 export interface PlayerPosMessage {
@@ -180,6 +183,14 @@ export interface DamageNumberMessage {
   isPlayerDamage: boolean; // true if damage to player, false if damage to enemy
 }
 
+export interface ComboUpdateMessage {
+  type: MessageType.COMBO_UPDATE;
+  count: number;
+  lastKiller: string; // 'host' or 'guest'
+  x: number;
+  y: number;
+}
+
 export type SyncMessage =
   | PlayerPosMessage
   | PlayerAttackMessage
@@ -200,4 +211,5 @@ export type SyncMessage =
   | HostStateMessage
   | PickupMessage
   | EquipItemMessage
-  | UseItemMessage;
+  | UseItemMessage
+  | ComboUpdateMessage;

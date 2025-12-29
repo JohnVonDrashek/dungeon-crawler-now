@@ -17,7 +17,9 @@ import {
   SceneChangeMessage,
   EnemyDeathMessage,
   LootSpawnMessage,
+  LootTakenMessage,
   DamageNumberMessage,
+  ComboUpdateMessage,
   KillFeedEntry,
 } from './SyncMessages';
 import { RemotePlayer } from './RemotePlayer';
@@ -132,6 +134,12 @@ export class GuestController {
         break;
       case MessageType.DAMAGE_NUMBER:
         this.handleDamageNumber(message as DamageNumberMessage);
+        break;
+      case MessageType.LOOT_TAKEN:
+        this.handleLootTaken(message as LootTakenMessage);
+        break;
+      case MessageType.COMBO_UPDATE:
+        this.handleComboUpdate(message as ComboUpdateMessage);
         break;
       default:
         // Log unknown message types for debugging
@@ -590,6 +598,54 @@ export class GuestController {
     return this.killFeed;
   }
 
+  private handleLootTaken(message: LootTakenMessage): void {
+    if (!this.scene || !this.scene.add) return;
+
+    // Find and remove the loot glow indicator
+    // Note: In a full implementation, we'd track loot sprites by ID
+    // For now, just show a notification
+
+    const isHost = message.playerId === 'host';
+    const playerName = isHost ? 'Host' : 'You';
+    const color = isHost ? '#88ff88' : '#88aaff';
+
+    // Show pickup notification at top of screen
+    const cam = this.scene.cameras.main;
+    const text = this.scene.add.text(cam.width / 2, 100, `${playerName} picked up loot!`, {
+      fontSize: '12px',
+      fontFamily: 'Roboto Mono, monospace',
+      color: color,
+      stroke: '#000000',
+      strokeThickness: 2,
+    });
+    text.setOrigin(0.5);
+    text.setScrollFactor(0);
+    text.setDepth(100);
+    text.setAlpha(0);
+
+    // Animate
+    this.scene.tweens.add({
+      targets: text,
+      alpha: 1,
+      y: 90,
+      duration: 200,
+      ease: 'Cubic.easeOut',
+      onComplete: () => {
+        this.scene.time.delayedCall(1500, () => {
+          this.scene.tweens.add({
+            targets: text,
+            alpha: 0,
+            y: 80,
+            duration: 300,
+            onComplete: () => {
+              if (text && text.active) text.destroy();
+            },
+          });
+        });
+      },
+    });
+  }
+
   private handleDamageNumber(message: DamageNumberMessage): void {
     if (!this.scene || !this.scene.add) return;
 
@@ -621,6 +677,61 @@ export class GuestController {
         if (text && text.active) {
           text.destroy();
         }
+      },
+    });
+  }
+
+  private handleComboUpdate(message: ComboUpdateMessage): void {
+    if (!this.scene || !this.scene.add) return;
+
+    // Validate message data
+    const count = typeof message.count === 'number' && message.count >= 2 ? message.count : 2;
+    const killer = typeof message.lastKiller === 'string' ? message.lastKiller : 'host';
+    const x = typeof message.x === 'number' && !isNaN(message.x) ? message.x : 0;
+    const y = typeof message.y === 'number' && !isNaN(message.y) ? message.y : 0;
+
+    // Color based on who got the kill - for guest, swap colors
+    // Guest sees their own kills as gold, host kills as green
+    const color = killer === 'guest' ? '#ffdd44' : '#88ff88';
+    const comboText = count >= 5 ? `${count}x MEGA COMBO!` : `${count}x COMBO!`;
+
+    const text = this.scene.add.text(x, y - 40, comboText, {
+      fontSize: count >= 5 ? '20px' : '16px',
+      fontFamily: 'Cinzel, Georgia, serif',
+      color: color,
+      stroke: '#000000',
+      strokeThickness: 3,
+    });
+    text.setOrigin(0.5);
+    text.setDepth(150);
+
+    // Animate: scale up, hold, fade out
+    text.setScale(0.5);
+    this.scene.tweens.add({
+      targets: text,
+      scale: 1.2,
+      duration: 150,
+      ease: 'Back.easeOut',
+      onComplete: () => {
+        this.scene.tweens.add({
+          targets: text,
+          scale: 1,
+          duration: 100,
+          onComplete: () => {
+            this.scene.time.delayedCall(500, () => {
+              this.scene.tweens.add({
+                targets: text,
+                y: y - 60,
+                alpha: 0,
+                duration: 400,
+                ease: 'Cubic.easeIn',
+                onComplete: () => {
+                  if (text && text.active) text.destroy();
+                },
+              });
+            });
+          },
+        });
       },
     });
   }
