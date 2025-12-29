@@ -285,6 +285,9 @@ export class HostController {
   }
 
   private handleGuestPickup(message: PickupMessage, _peerId: string): void {
+    // Validate loot ID
+    if (!message.lootId || typeof message.lootId !== 'string') return;
+
     // Broadcast to all that this loot was taken by guest
     const takenMessage: LootTakenMessage = {
       type: MessageType.LOOT_TAKEN,
@@ -295,7 +298,9 @@ export class HostController {
     networkManager.broadcast(takenMessage);
 
     // Emit event for scene to handle actual pickup
-    this.scene.events.emit('remoteLootPickup', message.lootId);
+    if (this.scene && this.scene.events) {
+      this.scene.events.emit('remoteLootPickup', message.lootId);
+    }
   }
 
   update(delta: number): void {

@@ -341,7 +341,23 @@ export class GuestController {
     }
   }
 
+  // Valid scene names that can be transitioned to
+  private static readonly VALID_SCENES = new Set([
+    'GameScene',
+    'HubScene',
+    'MenuScene',
+    'ShopScene',
+    'VictoryScene',
+    'GameOverScene',
+  ]);
+
   private handleSceneChange(message: SceneChangeMessage): void {
+    // Validate scene name to prevent arbitrary scene transitions
+    if (!message.sceneName || !GuestController.VALID_SCENES.has(message.sceneName)) {
+      console.warn('[GuestController] Invalid scene name:', message.sceneName);
+      return;
+    }
+
     this.cleanup();
     if (this.scene && this.scene.scene) {
       this.scene.scene.start(message.sceneName, message.data);

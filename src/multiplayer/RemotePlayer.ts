@@ -80,10 +80,19 @@ export class RemotePlayer extends Phaser.Physics.Arcade.Sprite {
   }
 
   applyPositionUpdate(message: PlayerPosMessage): void {
-    this.targetX = message.x;
-    this.targetY = message.y;
-    this.currentFacing = message.facing;
-    this.isMoving = message.isMoving;
+    // Validate position values before applying
+    if (typeof message.x === 'number' && !isNaN(message.x)) {
+      this.targetX = message.x;
+    }
+    if (typeof message.y === 'number' && !isNaN(message.y)) {
+      this.targetY = message.y;
+    }
+    if (typeof message.facing === 'string') {
+      this.currentFacing = message.facing;
+    }
+    if (typeof message.isMoving === 'boolean') {
+      this.isMoving = message.isMoving;
+    }
   }
 
   applyAttack(_message: PlayerAttackMessage): void {
@@ -98,15 +107,21 @@ export class RemotePlayer extends Phaser.Physics.Arcade.Sprite {
   }
 
   setHelperStats(hostMaxHp: number, hostHp: number): void {
+    // Validate inputs
+    const validMaxHp = typeof hostMaxHp === 'number' && hostMaxHp > 0 ? hostMaxHp : 100;
+    const validHp = typeof hostHp === 'number' && hostHp >= 0 ? hostHp : validMaxHp;
+
     const ratio = 0.75;
-    this.maxHp = Math.floor(hostMaxHp * ratio);
-    this.hp = Math.floor(hostHp * ratio);
+    this.maxHp = Math.floor(validMaxHp * ratio);
+    this.hp = Math.floor(validHp * ratio);
   }
 
   private isHelper: boolean = true;
 
   takeDamage(amount: number): void {
-    this.hp = Math.max(0, this.hp - amount);
+    // Validate damage amount
+    const validAmount = typeof amount === 'number' && amount > 0 ? amount : 0;
+    this.hp = Math.max(0, this.hp - validAmount);
 
     // Visual feedback
     const originalTint = this.isHelper ? 0x88aaff : 0xffffff;
