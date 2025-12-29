@@ -1116,7 +1116,7 @@ export class HostController {
   }
 
   private showReviveNotification(): void {
-    if (!this.scene || !this.scene.add) return;
+    if (!this.scene || !this.scene.add || !this.scene.cameras) return;
 
     const cam = this.scene.cameras.main;
     const text = this.scene.add.text(cam.width / 2, cam.height / 2, 'HELPER REVIVED!', {
@@ -1192,7 +1192,7 @@ export class HostController {
   }
 
   private createProximityBuffUI(): void {
-    if (!this.scene || !this.scene.add || this.proximityBuffUI) return;
+    if (!this.scene || !this.scene.add || !this.scene.cameras || this.proximityBuffUI) return;
 
     const cam = this.scene.cameras.main;
     this.proximityBuffUI = this.scene.add.container(cam.width / 2, 30);
@@ -1305,7 +1305,7 @@ export class HostController {
   }
 
   private showTetherWarning(): void {
-    if (this.tetherWarningUI || !this.scene || !this.scene.add) return;
+    if (this.tetherWarningUI || !this.scene || !this.scene.add || !this.scene.cameras) return;
 
     const cam = this.scene.cameras.main;
     this.tetherWarningUI = this.scene.add.container(cam.width / 2, 60);

@@ -649,7 +649,7 @@ export class GuestController {
   }
 
   private handleLootTaken(message: LootTakenMessage): void {
-    if (!this.scene || !this.scene.add) return;
+    if (!this.scene || !this.scene.add || !this.scene.cameras) return;
 
     // Find and remove the loot glow indicator
     // Note: In a full implementation, we'd track loot sprites by ID
@@ -1482,7 +1482,7 @@ export class GuestController {
   }
 
   private showTetherWarning(): void {
-    if (this.tetherWarningUI || !this.scene || !this.scene.add) return;
+    if (this.tetherWarningUI || !this.scene || !this.scene.add || !this.scene.cameras) return;
 
     const cam = this.scene.cameras.main;
     this.tetherWarningUI = this.scene.add.container(cam.width / 2, 60);
