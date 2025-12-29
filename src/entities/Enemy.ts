@@ -69,7 +69,9 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
 
     // Create a small dim light so enemies are visible in dark areas
     // Uses a reddish glow to make them feel threatening
-    this.enemyLight = scene.lights.addLight(x, y, 80, 0xff6644, 0.4);
+    if (scene.lights) {
+      this.enemyLight = scene.lights.addLight(x, y, 80, 0xff6644, 0.4);
+    }
   }
 
   // Set up sprite-based animations for this enemy
@@ -314,8 +316,8 @@ export class Enemy extends Phaser.Physics.Arcade.Sprite {
     this.scene.events.emit('enemyDeath', this);
 
     // Remove enemy light
-    if (this.enemyLight) {
-      this.enemyLight.setVisible(false);
+    if (this.enemyLight && this.scene && this.scene.lights) {
+      this.scene.lights.removeLight(this.enemyLight);
       this.enemyLight = null;
     }
 

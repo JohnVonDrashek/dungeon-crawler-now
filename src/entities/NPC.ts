@@ -238,15 +238,17 @@ export class NPC extends Phaser.Physics.Arcade.Sprite {
     });
 
     // Add real point light for NPC glow
-    this.npcLight = scene.lights.addLight(x, y, 70, data.tint || 0x8b5cf6, 0.4);
-    scene.tweens.add({
-      targets: this.npcLight,
-      intensity: { from: 0.3, to: 0.5 },
-      duration: 2000,
-      yoyo: true,
-      repeat: -1,
-      ease: 'Sine.easeInOut',
-    });
+    if (scene.lights) {
+      this.npcLight = scene.lights.addLight(x, y, 70, data.tint || 0x8b5cf6, 0.4);
+      scene.tweens.add({
+        targets: this.npcLight,
+        intensity: { from: 0.3, to: 0.5 },
+        duration: 2000,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    }
 
     // Add floating interaction indicator above NPC
     this.interactIndicator = scene.add.text(x, y - TILE_SIZE * 1.2, '!', {
@@ -313,7 +315,7 @@ export class NPC extends Phaser.Physics.Arcade.Sprite {
     }
 
     // Clean up light
-    if (this.npcLight && this.scene) {
+    if (this.npcLight && this.scene && this.scene.lights) {
       this.scene.tweens.killTweensOf(this.npcLight);
       this.scene.lights.removeLight(this.npcLight);
       this.npcLight = null;
