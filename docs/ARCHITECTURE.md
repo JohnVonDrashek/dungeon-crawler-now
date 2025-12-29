@@ -5,6 +5,7 @@
 ```
 src/
 ├── scenes/           # Phaser scenes (game states)
+│   ├── BaseScene.ts      # Abstract base class for all scenes
 │   ├── BootScene.ts      # Asset loading and placeholder generation
 │   ├── MenuScene.ts      # Main menu with animations
 │   ├── GameScene.ts      # Core dungeon gameplay
@@ -22,31 +23,47 @@ src/
 │       └── SinBosses.ts      # 7 unique sin bosses
 │
 ├── systems/          # Core game logic (decoupled from scenes)
-│   ├── CombatSystem.ts       # Damage calculation, crits, defense
-│   ├── LootSystem.ts         # Item drop generation
-│   ├── SaveSystem.ts         # LocalStorage persistence
-│   ├── ProgressionSystem.ts  # World completion tracking
-│   ├── InventorySystem.ts    # Item management, equipment
-│   ├── DungeonGenerator.ts   # Procedural room generation
-│   ├── RoomManager.ts        # Room state and activation
-│   ├── LightingSystem.ts     # Dynamic lighting with Light2D
 │   ├── AudioSystem.ts        # Music and SFX management
+│   ├── CombatSystem.ts       # Damage calculation, crits, defense
+│   ├── DungeonGenerator.ts   # Procedural room generation
+│   ├── DungeonNPCManager.ts  # NPC placement in dungeons
+│   ├── EnemySpawnManager.ts  # Enemy wave spawning
 │   ├── HazardSystem.ts       # Traps and environmental damage
-│   └── EnemySpawnManager.ts  # Enemy wave spawning
+│   ├── InventorySystem.ts    # Item management, equipment
+│   ├── Item.ts               # Item definitions and generation
+│   ├── LightingSystem.ts     # Dynamic lighting with Light2D
+│   ├── LootDropManager.ts    # Item drop spawning and pickup
+│   ├── LootSystem.ts         # Item drop generation logic
+│   ├── LoreSystem.ts         # Collectible lore management
+│   ├── PlayerAttackManager.ts # Player combat actions
+│   ├── ProgressionSystem.ts  # World completion tracking
+│   ├── RoomDecorationManager.ts # Prop and decoration placement
+│   ├── RoomManager.ts        # Room state and activation
+│   ├── SaveSystem.ts         # LocalStorage persistence
+│   ├── SettingsManager.ts    # Game settings persistence
+│   ├── VisualEffectsManager.ts # Camera shake, damage numbers
+│   ├── WangTileSystem.ts     # Wang tile autotiling
+│   └── Weapon.ts             # Weapon definitions and behavior
 │
 ├── ui/               # User interface components
+│   ├── DebugMenuUI.ts    # Developer debug tools
+│   ├── DialogueUI.ts     # NPC conversation display
 │   ├── GameHUD.ts        # In-game health, XP, stats display
 │   ├── InventoryUI.ts    # Inventory grid and tooltips
-│   ├── ShopUI.ts         # Shop item display and purchase
-│   ├── DialogueUI.ts     # NPC conversation display
 │   ├── LevelUpUI.ts      # Stat allocation on level up
+│   ├── LoreUIManager.ts  # Lore item display modals
+│   ├── MinimapUI.ts      # Dungeon minimap overlay
 │   ├── SettingsUI.ts     # Audio, controls settings
-│   └── LoreUIManager.ts  # Lore item display modals
+│   └── ShopUI.ts         # Shop item display and purchase
 │
 ├── multiplayer/      # P2P networking
+│   ├── index.ts              # Module exports
 │   ├── NetworkManager.ts     # Connection management, room codes
 │   ├── HostController.ts     # Server-side game state sync
-│   └── GuestController.ts    # Client-side state reception
+│   ├── GuestController.ts    # Client-side state reception
+│   ├── PlayerSync.ts         # Player state synchronization
+│   ├── RemotePlayer.ts       # Remote player representation
+│   └── SyncMessages.ts       # Network message types
 │
 ├── config/           # Game configuration
 │   └── WorldConfig.ts    # 7 sin worlds with themes, enemies, bosses
@@ -58,11 +75,11 @@ src/
 ## Key Patterns
 
 ### 1. Scene Management
-All scenes extend Phaser.Scene. Scenes manage their own lifecycle:
+All scenes extend `BaseScene`, which itself extends `Phaser.Scene`. BaseScene provides common functionality for event cleanup and resource management. Scenes manage their own lifecycle:
 - `preload()` - Load assets (usually delegated to BootScene)
 - `create()` - Initialize game objects
 - `update()` - Frame-by-frame logic
-- `shutdown()` - Cleanup event listeners, destroy objects
+- `shutdown()` - Cleanup event listeners, destroy objects (BaseScene handles common cleanup)
 
 ### 2. Manager Pattern
 Complex functionality extracted into manager classes:
