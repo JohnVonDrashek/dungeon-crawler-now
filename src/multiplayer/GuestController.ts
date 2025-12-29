@@ -159,6 +159,9 @@ export class GuestController {
   }
 
   private handleEnemyUpdate(message: EnemyUpdateMessage): void {
+    // Scene safety check - required for sprite creation
+    if (!this.scene || !this.scene.physics || !this.scene.textures) return;
+
     // Debug: log when receiving enemy updates
     if (message.enemies.length > 0 && this.guestEnemies.size === 0) {
       console.log('[GuestController] First enemy update received:', message.enemies.length, 'enemies');

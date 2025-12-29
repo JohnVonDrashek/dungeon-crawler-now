@@ -34,8 +34,10 @@ export class RemotePlayer extends Phaser.Physics.Arcade.Sprite {
     this.targetX = x;
     this.targetY = y;
 
-    // Add torch light for remote player
-    this.torchLight = scene.lights.addLight(x, y, 150, 0xffaa44, 0.8);
+    // Add torch light for remote player (if lighting is enabled)
+    if (scene.lights) {
+      this.torchLight = scene.lights.addLight(x, y, 150, 0xffaa44, 0.8);
+    }
 
     // Add name tag
     this.nameTag = scene.add.text(x, y - 30, isHelper ? 'Helper' : 'Host', {
