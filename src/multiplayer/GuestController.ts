@@ -127,9 +127,13 @@ export class GuestController {
     // Render visual projectile for host's attack
     if (!this.hostPlayer || !this.scene) return;
 
+    // Validate position values
+    const x = typeof message.x === 'number' && !isNaN(message.x) ? message.x : this.hostPlayer.x;
+    const y = typeof message.y === 'number' && !isNaN(message.y) ? message.y : this.hostPlayer.y;
+
     // Validate angle is a number
-    const angle = typeof message.angle === 'number' ? message.angle : 0;
-    const projectile = this.scene.add.sprite(message.x, message.y, 'projectile_wand');
+    const angle = typeof message.angle === 'number' && !isNaN(message.angle) ? message.angle : 0;
+    const projectile = this.scene.add.sprite(x, y, 'projectile_wand');
     projectile.setDepth(8);
     projectile.setRotation(angle);
 
@@ -138,8 +142,8 @@ export class GuestController {
     const duration = 500;
     this.scene.tweens.add({
       targets: projectile,
-      x: message.x + Math.cos(angle) * speed,
-      y: message.y + Math.sin(angle) * speed,
+      x: x + Math.cos(angle) * speed,
+      y: y + Math.sin(angle) * speed,
       alpha: 0,
       duration: duration,
       onComplete: () => {
@@ -163,6 +167,13 @@ export class GuestController {
     const seenIds = new Set<string>();
 
     for (const enemyData of message.enemies) {
+      // Validate enemy data
+      if (!enemyData.id || typeof enemyData.id !== 'string') continue;
+      const x = typeof enemyData.x === 'number' && !isNaN(enemyData.x) ? enemyData.x : 0;
+      const y = typeof enemyData.y === 'number' && !isNaN(enemyData.y) ? enemyData.y : 0;
+      const hp = typeof enemyData.hp === 'number' && !isNaN(enemyData.hp) ? Math.max(0, enemyData.hp) : 0;
+      const maxHp = typeof enemyData.maxHp === 'number' && enemyData.maxHp > 0 ? enemyData.maxHp : 100;
+
       seenIds.add(enemyData.id);
 
       let guestEnemy = this.guestEnemies.get(enemyData.id);
@@ -175,8 +186,8 @@ export class GuestController {
 
         // Create new enemy sprite with correct texture
         const sprite = this.scene.physics.add.sprite(
-          enemyData.x,
-          enemyData.y,
+          x,
+          y,
           textureKey
         );
         sprite.setDepth(5);
@@ -195,18 +206,18 @@ export class GuestController {
 
         // Store enemy data on the sprite for collision handling
         sprite.setData('enemyId', enemyData.id);
-        sprite.setData('hp', enemyData.hp);
-        sprite.setData('maxHp', enemyData.maxHp);
+        sprite.setData('hp', hp);
+        sprite.setData('maxHp', maxHp);
 
         // Create health bar
-        const healthBar = this.createHealthBar(enemyData.x, enemyData.y);
+        const healthBar = this.createHealthBar(x, y);
 
         guestEnemy = {
           sprite,
           healthBar,
           id: enemyData.id,
-          hp: enemyData.hp,
-          maxHp: enemyData.maxHp,
+          hp,
+          maxHp,
         };
         this.guestEnemies.set(enemyData.id, guestEnemy);
       }
@@ -214,26 +225,26 @@ export class GuestController {
       // Update position with interpolation
       guestEnemy.sprite.x = Phaser.Math.Linear(
         guestEnemy.sprite.x,
-        enemyData.x,
+        x,
         0.3
       );
       guestEnemy.sprite.y = Phaser.Math.Linear(
         guestEnemy.sprite.y,
-        enemyData.y,
+        y,
         0.3
       );
-      guestEnemy.hp = enemyData.hp;
-      guestEnemy.maxHp = enemyData.maxHp;
+      guestEnemy.hp = hp;
+      guestEnemy.maxHp = maxHp;
 
       // Update sprite data for collision handling
-      guestEnemy.sprite.setData('hp', enemyData.hp);
-      guestEnemy.sprite.setData('maxHp', enemyData.maxHp);
+      guestEnemy.sprite.setData('hp', hp);
+      guestEnemy.sprite.setData('maxHp', maxHp);
 
       // Update health bar position and width
       this.updateHealthBar(guestEnemy);
 
       // Visual feedback for dead enemies
-      if (enemyData.hp <= 0) {
+      if (hp <= 0) {
         guestEnemy.sprite.setAlpha(0);
         guestEnemy.healthBar.setVisible(false);
       }
@@ -279,18 +290,25 @@ export class GuestController {
   }
 
   private handleHostState(message: HostStateMessage): void {
+    // Validate incoming values
+    const maxHp = typeof message.maxHp === 'number' && message.maxHp > 0 ? message.maxHp : 100;
+    const level = typeof message.level === 'number' && message.level > 0 ? message.level : 1;
+    const gold = typeof message.gold === 'number' && message.gold >= 0 ? message.gold : 0;
+
     // Update helper stats based on host
     const ratio = 0.75;
-    this.player.maxHp = Math.floor(message.maxHp * ratio);
+    this.player.maxHp = Math.floor(maxHp * ratio);
     this.player.hp = Math.min(this.player.hp, this.player.maxHp);
-    this.player.level = message.level;
-    this.player.gold = message.gold;
+    this.player.level = level;
+    this.player.gold = gold;
   }
 
   private handleInventoryUpdate(message: InventoryUpdateMessage): void {
     try {
       this.player.inventory.deserialize(message.inventorySerialized);
-      this.player.gold = message.gold;
+      // Validate gold value
+      const gold = typeof message.gold === 'number' && message.gold >= 0 ? message.gold : 0;
+      this.player.gold = gold;
       this.player.recalculateStats();
     } catch (error) {
       console.error('[GuestController] Failed to deserialize inventory:', error);
@@ -313,8 +331,12 @@ export class GuestController {
 
   private handlePlayerRevive(message: PlayerReviveMessage): void {
     if (message.playerId === networkManager.peerId) {
+      // Validate position values
+      const x = typeof message.x === 'number' && !isNaN(message.x) ? message.x : this.player.x;
+      const y = typeof message.y === 'number' && !isNaN(message.y) ? message.y : this.player.y;
+
       this.exitSpectateMode();
-      this.player.setPosition(message.x, message.y);
+      this.player.setPosition(x, y);
       this.player.hp = this.player.maxHp;
     }
   }
@@ -327,13 +349,18 @@ export class GuestController {
   }
 
   private handleRoomActivated(message: RoomActivatedMessage): void {
+    // Validate position values
+    const hostX = typeof message.hostX === 'number' && !isNaN(message.hostX) ? message.hostX : this.player.x;
+    const hostY = typeof message.hostY === 'number' && !isNaN(message.hostY) ? message.hostY : this.player.y;
+    const roomId = typeof message.roomId === 'number' ? message.roomId : 0;
+
     // Mark the room as visited by host
-    this.visitedRoomIds.add(message.roomId);
-    this.lastSafeX = message.hostX;
-    this.lastSafeY = message.hostY;
+    this.visitedRoomIds.add(roomId);
+    this.lastSafeX = hostX;
+    this.lastSafeY = hostY;
 
     // Teleport guest player to host position when room is activated
-    this.player.setPosition(message.hostX + 20, message.hostY);
+    this.player.setPosition(hostX + 20, hostY);
     this.player.setVelocity(0, 0);
 
     // Visual feedback for teleport - with safe cleanup
