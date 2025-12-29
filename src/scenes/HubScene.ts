@@ -45,6 +45,7 @@ export class HubScene extends BaseScene {
   // Multiplayer
   private playerSync: PlayerSync | null = null;
   private remotePlayer: RemotePlayer | null = null;
+  private networkMessageListenerId: string | null = null;
 
   // Hub dimensions (in tiles)
   private readonly HUB_WIDTH = 25;
@@ -115,7 +116,7 @@ export class HubScene extends BaseScene {
       );
 
       // Listen for network messages
-      networkManager.onMessage((message, _peerId) => {
+      this.networkMessageListenerId = networkManager.onMessage((message, _peerId) => {
         if (message.type === MessageType.PLAYER_POS && this.remotePlayer) {
           this.remotePlayer.applyPositionUpdate(message as PlayerPosMessage);
         } else if (message.type === MessageType.SCENE_CHANGE) {
@@ -1185,5 +1186,11 @@ export class HubScene extends BaseScene {
 
     // Clean up multiplayer
     this.remotePlayer?.destroy();
+
+    // Clean up network message listener
+    if (this.networkMessageListenerId) {
+      networkManager.offMessage(this.networkMessageListenerId);
+      this.networkMessageListenerId = null;
+    }
   }
 }
