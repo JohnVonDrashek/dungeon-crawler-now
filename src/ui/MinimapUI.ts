@@ -37,6 +37,11 @@ export class MinimapUI {
   // Cache tile-to-room mapping for fast lookups
   private tileRoomCache: Map<string, Room | null> = new Map();
 
+  // Multiplayer partner position
+  private partnerX: number | null = null;
+  private partnerY: number | null = null;
+  private isHost: boolean = false; // Used to determine partner color
+
   constructor(scene: Phaser.Scene, dungeonData: DungeonData) {
     this.dungeonData = dungeonData;
     this.buildTileRoomCache();
@@ -66,6 +71,19 @@ export class MinimapUI {
   // Called when a shrine is used
   markShrineUsed(roomId: number): void {
     this.usedShrines.add(roomId);
+  }
+
+  // Set multiplayer partner position (world coordinates)
+  setPartnerPosition(x: number | null, y: number | null, isHost: boolean = false): void {
+    this.partnerX = x;
+    this.partnerY = y;
+    this.isHost = isHost;
+  }
+
+  // Clear partner position (partner disconnected)
+  clearPartner(): void {
+    this.partnerX = null;
+    this.partnerY = null;
   }
 
   update(playerX: number, playerY: number): void {
@@ -231,6 +249,32 @@ export class MinimapUI {
       }
     }
 
+    // Draw partner dot if in multiplayer
+    if (this.partnerX !== null && this.partnerY !== null) {
+      const partnerTileX = Math.floor(this.partnerX / TILE_SIZE);
+      const partnerTileY = Math.floor(this.partnerY / TILE_SIZE);
+      const partnerDrawX = offsetX + partnerTileX * this.scale;
+      const partnerDrawY = offsetY + partnerTileY * this.scale;
+
+      // Check if partner is within minimap viewport
+      if (partnerDrawX >= this.x && partnerDrawX <= this.x + this.viewportSize &&
+          partnerDrawY >= this.y && partnerDrawY <= this.y + this.viewportSize) {
+        // Partner color: blue for helper (host sees), green for host (guest sees)
+        const partnerColor = this.isHost ? 0x88aaff : 0x88ff88;
+        this.graphics.fillStyle(partnerColor);
+        this.graphics.fillCircle(partnerDrawX, partnerDrawY, 3);
+        // Darker outline for visibility
+        this.graphics.lineStyle(1, 0x000000);
+        this.graphics.strokeCircle(partnerDrawX, partnerDrawY, 3);
+      } else {
+        // Partner is off-screen - draw arrow pointing to them at edge
+        this.drawOffscreenIndicator(
+          partnerDrawX, partnerDrawY, centerOffset,
+          this.isHost ? 0x88aaff : 0x88ff88
+        );
+      }
+    }
+
     // Draw player dot (always centered)
     this.graphics.fillStyle(0x8b5cf6);
     this.graphics.fillCircle(
@@ -245,6 +289,42 @@ export class MinimapUI {
       this.y + centerOffset,
       3
     );
+  }
+
+  // Draw a small arrow at the edge of the minimap pointing toward off-screen partner
+  private drawOffscreenIndicator(
+    targetX: number,
+    targetY: number,
+    centerOffset: number,
+    color: number
+  ): void {
+    const centerX = this.x + centerOffset;
+    const centerY = this.y + centerOffset;
+
+    // Calculate angle from center to target
+    const angle = Math.atan2(targetY - centerY, targetX - centerX);
+
+    // Calculate edge position (where the indicator should appear)
+    const maxDist = (this.viewportSize / 2) - 5;
+    const edgeX = centerX + Math.cos(angle) * maxDist;
+    const edgeY = centerY + Math.sin(angle) * maxDist;
+
+    // Clamp to minimap bounds
+    const clampedX = Math.max(this.x + 5, Math.min(this.x + this.viewportSize - 5, edgeX));
+    const clampedY = Math.max(this.y + 5, Math.min(this.y + this.viewportSize - 5, edgeY));
+
+    // Draw small triangle pointing in the direction
+    this.graphics.fillStyle(color);
+    const arrowSize = 4;
+    const tip1X = clampedX + Math.cos(angle) * arrowSize;
+    const tip1Y = clampedY + Math.sin(angle) * arrowSize;
+    const perpAngle = angle + Math.PI / 2;
+    const base1X = clampedX + Math.cos(perpAngle) * (arrowSize * 0.6);
+    const base1Y = clampedY + Math.sin(perpAngle) * (arrowSize * 0.6);
+    const base2X = clampedX - Math.cos(perpAngle) * (arrowSize * 0.6);
+    const base2Y = clampedY - Math.sin(perpAngle) * (arrowSize * 0.6);
+
+    this.graphics.fillTriangle(tip1X, tip1Y, base1X, base1Y, base2X, base2Y);
   }
 
   destroy(): void {

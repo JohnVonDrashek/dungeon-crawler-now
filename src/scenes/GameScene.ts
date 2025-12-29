@@ -463,6 +463,15 @@ export class GameScene extends BaseScene {
       this.dungeonNPCManager.showNPCPrompt();
     }
 
+    // Update minimap with partner position in multiplayer
+    if (networkManager.isMultiplayer) {
+      const remotePlayer = this.hostController?.getRemotePlayer() ?? this.guestController?.getHostPlayer() ?? null;
+      if (remotePlayer) {
+        this.minimapUI.setPartnerPosition(remotePlayer.x, remotePlayer.y, networkManager.isHost);
+      } else {
+        this.minimapUI.clearPartner();
+      }
+    }
     this.minimapUI.update(this.player.x, this.player.y);
     const enemyCount = this.enemies.getChildren().filter((e) => e.active).length;
     this.gameHUD.update(this.floor, this.currentWorld, this.isBossFloor, enemyCount);
