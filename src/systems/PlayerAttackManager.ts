@@ -5,7 +5,7 @@ import { AudioSystem } from './AudioSystem';
 import { Weapon, WeaponType } from './Weapon';
 import { TILE_SIZE } from '../utils/constants';
 import { networkManager } from '../multiplayer/NetworkManager';
-import { MessageType, PlayerHitMessage, PlayerAttackMessage } from '../multiplayer/SyncMessages';
+import { MessageType, PlayerHitMessage, PlayerAttackMessage, DamageNumberMessage } from '../multiplayer/SyncMessages';
 
 export class PlayerAttackManager {
   private scene: Phaser.Scene;
@@ -381,6 +381,16 @@ export class PlayerAttackManager {
         damage: damage,
       };
       networkManager.broadcast(hitMessage);
+
+      // Also broadcast damage number for visual sync
+      const damageNumMessage: DamageNumberMessage = {
+        type: MessageType.DAMAGE_NUMBER,
+        x: enemy.x,
+        y: enemy.y,
+        damage: damage,
+        isPlayerDamage: false,
+      };
+      networkManager.broadcast(damageNumMessage);
     }
   }
 }

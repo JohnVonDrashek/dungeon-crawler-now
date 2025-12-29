@@ -165,6 +165,14 @@ export class RemotePlayer extends Phaser.Physics.Arcade.Sprite {
     }
   }
 
+  getHp(): number {
+    return this.hp;
+  }
+
+  getMaxHp(): number {
+    return this.maxHp;
+  }
+
   destroy(fromScene?: boolean): void {
     // Safe cleanup - check if scene and its lights still exist
     if (this.nameTag) {

@@ -28,6 +28,8 @@ import { InventoryUI } from '../ui/InventoryUI';
 import { SettingsUI } from '../ui/SettingsUI';
 import { DialogueUI } from '../ui/DialogueUI';
 import { GameHUD } from '../ui/GameHUD';
+import { KillFeedUI } from '../ui/KillFeedUI';
+import { MultiplayerHUD } from '../ui/MultiplayerHUD';
 import { networkManager } from '../multiplayer/NetworkManager';
 import { HostController } from '../multiplayer/HostController';
 import { GuestController } from '../multiplayer/GuestController';
@@ -91,6 +93,8 @@ export class GameScene extends BaseScene {
   private hostController: HostController | null = null;
   private guestController: GuestController | null = null;
   private playerSync: PlayerSync | null = null;
+  private killFeedUI: KillFeedUI | null = null;
+  private multiplayerHUD: MultiplayerHUD | null = null;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -237,6 +241,17 @@ export class GameScene extends BaseScene {
 
     if (networkManager.isMultiplayer) {
       this.playerSync = new PlayerSync(this.player);
+
+      // Create kill feed UI for co-op feedback
+      this.killFeedUI = new KillFeedUI(this);
+
+      // Create multiplayer HUD (room code, partner health, etc.)
+      this.multiplayerHUD = new MultiplayerHUD(this);
+
+      // Listen for kill feed entries from both host and guest controllers
+      this.events.on('killFeedEntry', (killerPlayerId: string, enemyType: string) => {
+        this.killFeedUI?.addEntry(killerPlayerId, enemyType);
+      });
 
       if (networkManager.isHost) {
         console.log('[GameScene] Creating HostController');
@@ -388,6 +403,12 @@ export class GameScene extends BaseScene {
     this.playerSync?.update();
     this.hostController?.update(delta);
     this.guestController?.update();
+
+    // Update multiplayer HUD with partner info
+    if (this.multiplayerHUD) {
+      const remotePlayer = this.hostController?.getRemotePlayer() ?? this.guestController?.getHostPlayer() ?? null;
+      this.multiplayerHUD.update(remotePlayer);
+    }
 
     // Reset speed modifier each frame
     this.player.resetSpeedModifier();
@@ -754,9 +775,14 @@ export class GameScene extends BaseScene {
     // Clean up multiplayer
     this.hostController?.destroy();
     this.guestController?.destroy();
+    this.killFeedUI?.destroy();
+    this.multiplayerHUD?.destroy();
+    this.events.off('killFeedEntry');
     this.hostController = null;
     this.guestController = null;
     this.playerSync = null;
+    this.killFeedUI = null;
+    this.multiplayerHUD = null;
 
     // Stop audio
     this.audioSystem?.stopMusic();

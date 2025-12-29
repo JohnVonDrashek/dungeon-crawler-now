@@ -15,6 +15,10 @@ import {
   PickupMessage,
   PlayerAttackMessage,
   RoomActivatedMessage,
+  EnemyDeathMessage,
+  LootSpawnMessage,
+  DamageNumberMessage,
+  RoomClearMessage,
 } from './SyncMessages';
 import { RemotePlayer } from './RemotePlayer';
 import { Player } from '../entities/Player';
@@ -37,6 +41,9 @@ export class HostController {
   // Map local enemy references to network IDs
   private enemyIdMap: Map<Enemy, string> = new Map();
   private nextEnemyId: number = 1;
+
+  // Track last hitter for kill attribution
+  private lastHitterMap: Map<string, 'host' | 'guest'> = new Map();
 
   // Track last known guest position for validation
   private lastGuestPosition: { x: number; y: number } | null = null;
@@ -64,12 +71,126 @@ export class HostController {
 
     this.setupMessageHandlers();
     this.setupPeerHandlers();
+    this.setupSceneEventHandlers();
 
     // If guest is already connected (from MenuScene), create remote player now
     if (networkManager.isConnected) {
       this.createRemotePlayer();
       this.sendInitialState();
     }
+  }
+
+  private setupSceneEventHandlers(): void {
+    // Listen for enemy deaths to broadcast to guest
+    this.scene.events.on('enemyDeath', (enemy: Enemy) => {
+      this.handleEnemyDeath(enemy);
+    });
+
+    // Listen for loot drops to sync with guest
+    this.scene.events.on('lootSpawned', (lootId: string, type: string, x: number, y: number, data: string) => {
+      this.broadcastLootSpawn(lootId, type, x, y, data);
+    });
+
+    // Listen for room cleared events
+    this.scene.events.on('roomCleared', (roomId: number) => {
+      this.broadcastRoomCleared(roomId);
+    });
+  }
+
+  private broadcastRoomCleared(roomId: number): void {
+    const message: RoomClearMessage = {
+      type: MessageType.ROOM_CLEAR,
+      roomIndex: roomId,
+    };
+    networkManager.broadcast(message);
+
+    // Show notification for host
+    this.showRoomClearedNotification();
+  }
+
+  private showRoomClearedNotification(): void {
+    if (!this.scene || !this.scene.add || !this.scene.cameras) return;
+
+    const cam = this.scene.cameras.main;
+    const text = this.scene.add.text(cam.width / 2, cam.height / 2 - 50, 'ROOM CLEARED!', {
+      fontSize: '24px',
+      fontFamily: 'Cinzel, Georgia, serif',
+      color: '#44ff44',
+      stroke: '#000000',
+      strokeThickness: 4,
+    });
+    text.setOrigin(0.5);
+    text.setScrollFactor(0);
+    text.setDepth(200);
+    text.setAlpha(0);
+
+    // Animate in
+    this.scene.tweens.add({
+      targets: text,
+      alpha: 1,
+      y: cam.height / 2 - 60,
+      duration: 300,
+      ease: 'Cubic.easeOut',
+      onComplete: () => {
+        // Hold then fade out
+        this.scene.time.delayedCall(1000, () => {
+          this.scene.tweens.add({
+            targets: text,
+            alpha: 0,
+            y: cam.height / 2 - 80,
+            duration: 500,
+            ease: 'Cubic.easeIn',
+            onComplete: () => {
+              if (text && text.active) text.destroy();
+            },
+          });
+        });
+      },
+    });
+  }
+
+  private handleEnemyDeath(enemy: Enemy): void {
+    const enemyId = this.enemyIdMap.get(enemy);
+    if (!enemyId) return;
+
+    // Get killer from last hitter map
+    const killer = this.lastHitterMap.get(enemyId) || 'host';
+
+    // Broadcast death to guest
+    const deathMessage: EnemyDeathMessage = {
+      type: MessageType.ENEMY_DEATH,
+      id: enemyId,
+      killerPlayerId: killer,
+      enemyType: enemy.texture.key,
+      x: enemy.x,
+      y: enemy.y,
+    };
+    networkManager.broadcast(deathMessage);
+
+    // Emit kill feed event for local UI
+    this.scene.events.emit('killFeedEntry', killer, enemy.texture.key);
+
+    // Cleanup
+    this.lastHitterMap.delete(enemyId);
+  }
+
+  // Called when host damages an enemy
+  trackHostHit(enemy: Enemy): void {
+    const enemyId = this.enemyIdMap.get(enemy);
+    if (enemyId) {
+      this.lastHitterMap.set(enemyId, 'host');
+    }
+  }
+
+  private broadcastLootSpawn(lootId: string, type: string, x: number, y: number, data: string): void {
+    const message: LootSpawnMessage = {
+      type: MessageType.LOOT_SPAWN,
+      id: lootId,
+      itemData: JSON.stringify({ type, data }),
+      x,
+      y,
+    };
+    networkManager.broadcast(message);
   }
 
   private setupMessageHandlers(): void {
@@ -102,6 +223,10 @@ export class HostController {
 
         case MessageType.PLAYER_ATTACK:
           this.handleGuestAttack(message as PlayerAttackMessage);
+          break;
+
+        case MessageType.DAMAGE_NUMBER:
+          this.handleGuestDamageNumber(message as DamageNumberMessage);
           break;
 
         default:
@@ -243,10 +368,16 @@ export class HostController {
       return;
     }
 
+    // Track that guest was the last hitter for kill attribution
+    this.lastHitterMap.set(message.enemyId, 'guest');
+
     // Find the enemy by network ID and apply damage
     for (const [enemy, id] of this.enemyIdMap) {
       if (id === message.enemyId && enemy.active) {
         enemy.takeDamage(message.damage);
+
+        // Show damage number for guest's hit
+        this.scene.events.emit('showDamageNumber', enemy.x, enemy.y, message.damage, false);
         break;
       }
     }
@@ -301,6 +432,41 @@ export class HostController {
     if (this.scene && this.scene.events) {
       this.scene.events.emit('remoteLootPickup', message.lootId);
     }
+  }
+
+  private handleGuestDamageNumber(message: DamageNumberMessage): void {
+    if (!this.scene || !this.scene.add) return;
+
+    // Validate position
+    const x = typeof message.x === 'number' && !isNaN(message.x) ? message.x : 0;
+    const y = typeof message.y === 'number' && !isNaN(message.y) ? message.y : 0;
+    const damage = typeof message.damage === 'number' && !isNaN(message.damage) ? Math.floor(message.damage) : 0;
+
+    // Create damage number text with helper's tint color
+    const color = message.isPlayerDamage ? '#ff4444' : '#88aaff'; // Blue for helper's damage
+    const text = this.scene.add.text(x, y - 10, `${damage}`, {
+      fontSize: '14px',
+      fontFamily: 'Roboto Mono, monospace',
+      color: color,
+      stroke: '#000000',
+      strokeThickness: 2,
+    });
+    text.setOrigin(0.5);
+    text.setDepth(100);
+
+    // Float up and fade out animation
+    this.scene.tweens.add({
+      targets: text,
+      y: y - 35,
+      alpha: 0,
+      duration: 800,
+      ease: 'Cubic.easeOut',
+      onComplete: () => {
+        if (text && text.active) {
+          text.destroy();
+        }
+      },
+    });
   }
 
   update(delta: number): void {
@@ -458,9 +624,15 @@ export class HostController {
     networkManager.clearOnPeerJoin();
     networkManager.clearOnPeerLeave();
 
+    // Remove scene event listeners
+    this.scene.events.off('enemyDeath');
+    this.scene.events.off('lootSpawned');
+    this.scene.events.off('roomCleared');
+
     this.removeRemotePlayer();
     this.hideWaitingUI();
     this.enemyIdMap.clear();
+    this.lastHitterMap.clear();
 
     // Reset rate limiter
     this.rateLimiter.reset();

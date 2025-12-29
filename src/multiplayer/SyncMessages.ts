@@ -20,6 +20,7 @@ export enum MessageType {
   PLAYER_POS = 'PLAYER_POS',
   PLAYER_ATTACK = 'PLAYER_ATTACK',
   PLAYER_HIT = 'PLAYER_HIT',
+  DAMAGE_NUMBER = 'DAMAGE_NUMBER',
   PICKUP = 'PICKUP',
   EQUIP_ITEM = 'EQUIP_ITEM',
   USE_ITEM = 'USE_ITEM',
@@ -77,6 +78,16 @@ export interface EnemyDeathMessage {
   type: MessageType.ENEMY_DEATH;
   id: string;
   killerPlayerId: string;
+  enemyType: string;
+  x: number;
+  y: number;
+}
+
+// Kill feed entry for co-op UI
+export interface KillFeedEntry {
+  killerPlayerId: string;
+  enemyType: string;
+  timestamp: number;
 }
 
 export interface LootSpawnMessage {
@@ -161,10 +172,19 @@ export interface UseItemMessage {
   itemId: string;
 }
 
+export interface DamageNumberMessage {
+  type: MessageType.DAMAGE_NUMBER;
+  x: number;
+  y: number;
+  damage: number;
+  isPlayerDamage: boolean; // true if damage to player, false if damage to enemy
+}
+
 export type SyncMessage =
   | PlayerPosMessage
   | PlayerAttackMessage
   | PlayerHitMessage
+  | DamageNumberMessage
   | EnemySpawnMessage
   | EnemyUpdateMessage
   | EnemyDeathMessage

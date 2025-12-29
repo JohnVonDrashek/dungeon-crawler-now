@@ -13,6 +13,9 @@ export class LootDropManager {
   private weaponDrops!: Phaser.Physics.Arcade.Group;
   private goldDrops!: Phaser.Physics.Arcade.Group;
 
+  // Unique ID counter for loot sync
+  private nextLootId: number = 1;
+
   constructor(scene: Phaser.Scene, player: Player, audioSystem: AudioSystem) {
     this.scene = scene;
     this.player = player;
@@ -40,12 +43,17 @@ export class LootDropManager {
   // === SPAWN METHODS ===
 
   spawnItemDrop(x: number, y: number, item: Item): void {
+    const lootId = `loot_${this.nextLootId++}`;
     const texture = this.getItemDropTexture(item);
     const drop = this.itemDrops.create(x, y, texture) as Phaser.Physics.Arcade.Sprite;
     drop.setData('item', item);
+    drop.setData('lootId', lootId);
     drop.setDepth(5);
     drop.setTint(RARITY_COLORS[item.rarity]);
     drop.setPipeline('Light2D');
+
+    // Emit for multiplayer sync (simplified - guest just sees visual indicator)
+    this.scene.events.emit('lootSpawned', lootId, 'item', x, y, item.name);
 
     // Add real point light for glow effect
     const light = this.scene.lights.addLight(x, y, 80, RARITY_COLORS[item.rarity], 0.6);
@@ -94,14 +102,19 @@ export class LootDropManager {
   }
 
   spawnWeaponDrop(x: number, y: number, weapon: Weapon): void {
+    const lootId = `loot_${this.nextLootId++}`;
     const drop = this.weaponDrops.create(x, y, weapon.stats.texture) as Phaser.Physics.Arcade.Sprite;
     drop.setData('weapon', weapon);
+    drop.setData('lootId', lootId);
     drop.setDepth(5);
     drop.setPipeline('Light2D');
 
     // Rarity-based colors
     const rarityColors = [0xffffff, 0x00ff00, 0x0088ff, 0xaa00ff, 0xffaa00];
     drop.setTint(rarityColors[weapon.rarity]);
+
+    // Emit for multiplayer sync (simplified - guest just sees visual indicator)
+    this.scene.events.emit('lootSpawned', lootId, 'weapon', x, y, weapon.stats.texture);
 
     // Add real point light for glow effect
     const light = this.scene.lights.addLight(x, y, 100, rarityColors[weapon.rarity], 0.7);
@@ -150,12 +163,16 @@ export class LootDropManager {
   }
 
   spawnGoldDrop(x: number, y: number, amount: number): void {
+    const lootId = `gold_${this.nextLootId++}`;
     // Spawn multiple coins for larger amounts
     const coinCount = Math.min(Math.ceil(amount / 10), 5);
     const totalAmount = amount;
 
     // Add a single shared light for the gold pile
     const light = this.scene.lights.addLight(x, y, 60, 0xffdd44, 0.4);
+
+    // Emit for multiplayer sync
+    this.scene.events.emit('lootSpawned', lootId, 'gold', x, y, String(amount));
 
     for (let i = 0; i < coinCount; i++) {
       const offsetX = (Math.random() - 0.5) * 20;

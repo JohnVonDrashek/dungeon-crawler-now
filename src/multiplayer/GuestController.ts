@@ -15,6 +15,10 @@ import {
   PlayerDiedMessage,
   PlayerReviveMessage,
   SceneChangeMessage,
+  EnemyDeathMessage,
+  LootSpawnMessage,
+  DamageNumberMessage,
+  KillFeedEntry,
 } from './SyncMessages';
 import { RemotePlayer } from './RemotePlayer';
 import { Player } from '../entities/Player';
@@ -26,6 +30,10 @@ interface GuestEnemy {
   id: string;
   hp: number;
   maxHp: number;
+  // For smoother interpolation
+  targetX: number;
+  targetY: number;
+  lastUpdateTime: number;
 }
 
 export class GuestController {
@@ -45,6 +53,11 @@ export class GuestController {
 
   // Network listener ID for cleanup
   private messageListenerId: string | null = null;
+
+  // Kill feed for co-op UI
+  private killFeed: KillFeedEntry[] = [];
+  private readonly KILL_FEED_MAX_ENTRIES = 5;
+  private readonly KILL_FEED_DURATION_MS = 5000;
 
   constructor(scene: Phaser.Scene, player: Player) {
     this.scene = scene;
@@ -110,6 +123,15 @@ export class GuestController {
         break;
       case MessageType.ROOM_ACTIVATED:
         this.handleRoomActivated(message as RoomActivatedMessage);
+        break;
+      case MessageType.ENEMY_DEATH:
+        this.handleEnemyDeath(message as EnemyDeathMessage);
+        break;
+      case MessageType.LOOT_SPAWN:
+        this.handleLootSpawn(message as LootSpawnMessage);
+        break;
+      case MessageType.DAMAGE_NUMBER:
+        this.handleDamageNumber(message as DamageNumberMessage);
         break;
       default:
         // Log unknown message types for debugging
@@ -221,21 +243,17 @@ export class GuestController {
           id: enemyData.id,
           hp,
           maxHp,
+          targetX: x,
+          targetY: y,
+          lastUpdateTime: Date.now(),
         };
         this.guestEnemies.set(enemyData.id, guestEnemy);
       }
 
-      // Update position with interpolation
-      guestEnemy.sprite.x = Phaser.Math.Linear(
-        guestEnemy.sprite.x,
-        x,
-        0.3
-      );
-      guestEnemy.sprite.y = Phaser.Math.Linear(
-        guestEnemy.sprite.y,
-        y,
-        0.3
-      );
+      // Store target position for smooth interpolation in update()
+      guestEnemy.targetX = x;
+      guestEnemy.targetY = y;
+      guestEnemy.lastUpdateTime = Date.now();
       guestEnemy.hp = hp;
       guestEnemy.maxHp = maxHp;
 
@@ -323,6 +341,50 @@ export class GuestController {
     if (this.isSpectating) {
       this.exitSpectateMode();
     }
+
+    // Show notification for guest
+    this.showRoomClearedNotification();
+  }
+
+  private showRoomClearedNotification(): void {
+    if (!this.scene || !this.scene.add || !this.scene.cameras) return;
+
+    const cam = this.scene.cameras.main;
+    const text = this.scene.add.text(cam.width / 2, cam.height / 2 - 50, 'ROOM CLEARED!', {
+      fontSize: '24px',
+      fontFamily: 'Cinzel, Georgia, serif',
+      color: '#44ff44',
+      stroke: '#000000',
+      strokeThickness: 4,
+    });
+    text.setOrigin(0.5);
+    text.setScrollFactor(0);
+    text.setDepth(200);
+    text.setAlpha(0);
+
+    // Animate in
+    this.scene.tweens.add({
+      targets: text,
+      alpha: 1,
+      y: cam.height / 2 - 60,
+      duration: 300,
+      ease: 'Cubic.easeOut',
+      onComplete: () => {
+        // Hold then fade out
+        this.scene.time.delayedCall(1000, () => {
+          this.scene.tweens.add({
+            targets: text,
+            alpha: 0,
+            y: cam.height / 2 - 80,
+            duration: 500,
+            ease: 'Cubic.easeIn',
+            onComplete: () => {
+              if (text && text.active) text.destroy();
+            },
+          });
+        });
+      },
+    });
   }
 
   private handlePlayerDied(message: PlayerDiedMessage): void {
@@ -394,6 +456,170 @@ export class GuestController {
       onComplete: () => {
         if (flash && flash.active) {
           flash.destroy();
+        }
+      },
+    });
+  }
+
+  private handleEnemyDeath(message: EnemyDeathMessage): void {
+    if (!this.scene || !this.scene.add || !this.scene.tweens) return;
+
+    // Remove enemy from our tracking
+    const guestEnemy = this.guestEnemies.get(message.id);
+    if (guestEnemy) {
+      // Death animation matching host's visual effects
+      this.scene.tweens.add({
+        targets: guestEnemy.sprite,
+        alpha: 0,
+        scale: 0.5,
+        duration: 200,
+        onComplete: () => {
+          if (guestEnemy.sprite && guestEnemy.sprite.active) {
+            guestEnemy.sprite.destroy();
+          }
+          if (guestEnemy.healthBar && guestEnemy.healthBar.active) {
+            guestEnemy.healthBar.destroy();
+          }
+        },
+      });
+
+      this.guestEnemies.delete(message.id);
+    }
+
+    // Spawn death particles at the location
+    this.spawnDeathParticles(message.x, message.y);
+
+    // Add to kill feed
+    this.addKillFeedEntry(message.killerPlayerId, message.enemyType);
+
+    // Emit event for local UI
+    this.scene.events.emit('killFeedEntry', message.killerPlayerId, message.enemyType);
+  }
+
+  private spawnDeathParticles(x: number, y: number): void {
+    if (!this.scene || !this.scene.add) return;
+
+    // Create simple death effect with sprites
+    for (let i = 0; i < 6; i++) {
+      const angle = (i / 6) * Math.PI * 2;
+      const particle = this.scene.add.circle(x, y, 3, 0xff4444, 0.8);
+      particle.setDepth(50);
+
+      this.scene.tweens.add({
+        targets: particle,
+        x: x + Math.cos(angle) * 30,
+        y: y + Math.sin(angle) * 30,
+        alpha: 0,
+        scale: 0.3,
+        duration: 300,
+        onComplete: () => {
+          if (particle && particle.active) {
+            particle.destroy();
+          }
+        },
+      });
+    }
+  }
+
+  private handleLootSpawn(message: LootSpawnMessage): void {
+    if (!this.scene || !this.scene.add) return;
+
+    // Parse loot data
+    let lootInfo: { type: string; data: string };
+    try {
+      lootInfo = JSON.parse(message.itemData);
+    } catch {
+      console.warn('[GuestController] Failed to parse loot data');
+      return;
+    }
+
+    // Create visual loot indicator for guest (simplified visual)
+    const lootGlow = this.scene.add.circle(message.x, message.y, 10, 0xffdd44, 0.6);
+    lootGlow.setDepth(4);
+
+    // Floating animation
+    this.scene.tweens.add({
+      targets: lootGlow,
+      y: message.y - 5,
+      duration: 500,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+
+    // Pulse animation
+    this.scene.tweens.add({
+      targets: lootGlow,
+      alpha: 0.9,
+      scale: 1.2,
+      duration: 600,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+
+    // Store loot reference with ID for potential sync
+    lootGlow.setData('lootId', message.id);
+    lootGlow.setData('lootType', lootInfo.type);
+  }
+
+  private addKillFeedEntry(killerPlayerId: string, enemyType: string): void {
+    const entry: KillFeedEntry = {
+      killerPlayerId,
+      enemyType,
+      timestamp: Date.now(),
+    };
+
+    this.killFeed.unshift(entry);
+
+    // Limit entries
+    if (this.killFeed.length > this.KILL_FEED_MAX_ENTRIES) {
+      this.killFeed.pop();
+    }
+
+    // Auto-remove old entries
+    setTimeout(() => {
+      const index = this.killFeed.indexOf(entry);
+      if (index !== -1) {
+        this.killFeed.splice(index, 1);
+      }
+    }, this.KILL_FEED_DURATION_MS);
+  }
+
+  getKillFeed(): KillFeedEntry[] {
+    return this.killFeed;
+  }
+
+  private handleDamageNumber(message: DamageNumberMessage): void {
+    if (!this.scene || !this.scene.add) return;
+
+    // Validate position
+    const x = typeof message.x === 'number' && !isNaN(message.x) ? message.x : 0;
+    const y = typeof message.y === 'number' && !isNaN(message.y) ? message.y : 0;
+    const damage = typeof message.damage === 'number' && !isNaN(message.damage) ? Math.floor(message.damage) : 0;
+
+    // Create damage number text
+    const color = message.isPlayerDamage ? '#ff4444' : '#ffff44';
+    const text = this.scene.add.text(x, y - 10, `${damage}`, {
+      fontSize: '14px',
+      fontFamily: 'Roboto Mono, monospace',
+      color: color,
+      stroke: '#000000',
+      strokeThickness: 2,
+    });
+    text.setOrigin(0.5);
+    text.setDepth(100);
+
+    // Float up and fade out animation
+    this.scene.tweens.add({
+      targets: text,
+      y: y - 35,
+      alpha: 0,
+      duration: 800,
+      ease: 'Cubic.easeOut',
+      onComplete: () => {
+        if (text && text.active) {
+          text.destroy();
         }
       },
     });
@@ -588,8 +814,37 @@ export class GuestController {
       }
     }
 
-    // Interpolate guest enemy positions
-    // Animation updates handled in handleEnemyUpdate
+    // Smooth interpolation for all guest enemies
+    this.updateEnemyInterpolation();
+  }
+
+  private updateEnemyInterpolation(): void {
+    const now = Date.now();
+    const expectedUpdateInterval = 50; // Host sends updates every 50ms
+
+    for (const guestEnemy of this.guestEnemies.values()) {
+      if (!guestEnemy.sprite || !guestEnemy.sprite.active) continue;
+
+      // Calculate time-based interpolation factor
+      const timeSinceUpdate = now - guestEnemy.lastUpdateTime;
+      // Use aggressive lerp to catch up, but cap it to prevent overshooting
+      const lerpFactor = Math.min(timeSinceUpdate / expectedUpdateInterval * 0.15, 0.4);
+
+      // Smooth interpolation toward target
+      guestEnemy.sprite.x = Phaser.Math.Linear(
+        guestEnemy.sprite.x,
+        guestEnemy.targetX,
+        lerpFactor
+      );
+      guestEnemy.sprite.y = Phaser.Math.Linear(
+        guestEnemy.sprite.y,
+        guestEnemy.targetY,
+        lerpFactor
+      );
+
+      // Update health bar position
+      this.updateHealthBar(guestEnemy);
+    }
   }
 
   getGuestEnemy(id: string): GuestEnemy | undefined {
