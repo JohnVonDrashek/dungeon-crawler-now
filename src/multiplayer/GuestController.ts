@@ -27,6 +27,7 @@ import {
   XpGainedMessage,
   EmoteMessage,
   LevelUpMessage,
+  HealthPickupMessage,
   KillFeedEntry,
 } from './SyncMessages';
 import { RemotePlayer } from './RemotePlayer';
@@ -182,6 +183,9 @@ export class GuestController {
         break;
       case MessageType.LEVEL_UP:
         this.handleLevelUp(message as LevelUpMessage);
+        break;
+      case MessageType.HEALTH_PICKUP:
+        this.handleHealthPickup(message as HealthPickupMessage);
         break;
       default:
         // Log unknown message types for debugging
@@ -1566,6 +1570,69 @@ export class GuestController {
 
     // Show local level-up notification
     this.showLevelUpNotification('guest', newLevel, this.player.x, this.player.y);
+  }
+
+  private handleHealthPickup(message: HealthPickupMessage): void {
+    if (!this.scene || !this.scene.add) return;
+
+    const x = typeof message.x === 'number' ? message.x : 0;
+    const y = typeof message.y === 'number' ? message.y : 0;
+    const amount = typeof message.amount === 'number' ? message.amount : 0;
+
+    this.showHealthPickupNotification(x, y, amount, message.playerId);
+  }
+
+  // Broadcast guest health pickup to host
+  broadcastHealthPickup(amount: number): void {
+    const message: HealthPickupMessage = {
+      type: MessageType.HEALTH_PICKUP,
+      playerId: 'guest',
+      amount,
+      newHp: this.player.hp,
+      maxHp: this.player.maxHp,
+      x: this.player.x,
+      y: this.player.y,
+    };
+    networkManager.broadcast(message);
+  }
+
+  private showHealthPickupNotification(x: number, y: number, amount: number, playerId: string): void {
+    if (!this.scene || !this.scene.add) return;
+
+    const isHost = playerId === 'host';
+    // For guest view: host is green, guest is gold
+    const color = isHost ? '#88ff88' : '#ffdd44';
+
+    // Healing number
+    const text = this.scene.add.text(x, y - 25, `+${amount}`, {
+      fontSize: '14px',
+      fontFamily: 'Roboto Mono',
+      color: color,
+      stroke: '#000000',
+      strokeThickness: 2,
+    });
+    text.setOrigin(0.5);
+    text.setDepth(100);
+
+    // Heart icon
+    const heart = this.scene.add.text(x + 18, y - 25, '❤', {
+      fontSize: '12px',
+    });
+    heart.setOrigin(0.5);
+    heart.setDepth(100);
+
+    // Animate: float up and fade out
+    this.scene.tweens.add({
+      targets: [text, heart],
+      y: y - 55,
+      alpha: 0,
+      duration: 1000,
+      ease: 'Cubic.easeOut',
+      onComplete: () => {
+        if (text && text.active) text.destroy();
+        if (heart && heart.active) heart.destroy();
+      },
+    });
   }
 
   private showLevelUpNotification(playerId: string, level: number, x: number, y: number): void {

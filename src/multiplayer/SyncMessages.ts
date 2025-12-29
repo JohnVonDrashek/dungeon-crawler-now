@@ -44,6 +44,9 @@ export enum MessageType {
 
   // Level up sync
   LEVEL_UP = 'LEVEL_UP',
+
+  // Health pickup sync
+  HEALTH_PICKUP = 'HEALTH_PICKUP',
 }
 
 export interface PlayerPosMessage {
@@ -262,6 +265,16 @@ export interface LevelUpMessage {
   y: number;
 }
 
+export interface HealthPickupMessage {
+  type: MessageType.HEALTH_PICKUP;
+  playerId: string;
+  amount: number;
+  newHp: number;
+  maxHp: number;
+  x: number;
+  y: number;
+}
+
 export type SyncMessage =
   | PlayerPosMessage
   | PlayerAttackMessage
@@ -290,4 +303,5 @@ export type SyncMessage =
   | PingMarkerMessage
   | XpGainedMessage
   | EmoteMessage
-  | LevelUpMessage;
+  | LevelUpMessage
+  | HealthPickupMessage;
