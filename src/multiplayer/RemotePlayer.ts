@@ -67,7 +67,7 @@ export class RemotePlayer extends Phaser.Physics.Arcade.Sprite {
     }
 
     // Update animation (with validation)
-    if (!this.scene || !this.anims) return;
+    if (!this.scene || !this.anims || !this.scene.anims) return;
 
     const animKey = this.isMoving
       ? `player_walk_${this.currentFacing}`
@@ -127,21 +127,25 @@ export class RemotePlayer extends Phaser.Physics.Arcade.Sprite {
   die(): void {
     this.isDead = true;
     this.setAlpha(0.3);
-    this.nameTag.setText('(Dead)');
-    this.nameTag.setColor('#ff4444');
+    if (this.nameTag && this.nameTag.active) {
+      this.nameTag.setText('(Dead)');
+      this.nameTag.setColor('#ff4444');
+    }
   }
 
   revive(x: number, y: number): void {
     this.isDead = false;
     this.hp = this.maxHp;
     this.setAlpha(1);
-    this.setTint(0x88aaff);
+    this.setTint(this.isHelper ? 0x88aaff : 0xffffff);
     this.targetX = x;
     this.targetY = y;
     this.x = x;
     this.y = y;
-    this.nameTag.setText('Helper');
-    this.nameTag.setColor('#88aaff');
+    if (this.nameTag && this.nameTag.active) {
+      this.nameTag.setText(this.isHelper ? 'Helper' : 'Host');
+      this.nameTag.setColor(this.isHelper ? '#88aaff' : '#ffffff');
+    }
   }
 
   destroy(fromScene?: boolean): void {

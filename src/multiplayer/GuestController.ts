@@ -125,7 +125,7 @@ export class GuestController {
 
   private handleHostAttack(message: PlayerAttackMessage): void {
     // Render visual projectile for host's attack
-    if (!this.hostPlayer) return;
+    if (!this.hostPlayer || !this.scene) return;
 
     // Validate angle is a number
     const angle = typeof message.angle === 'number' ? message.angle : 0;
@@ -321,7 +321,9 @@ export class GuestController {
 
   private handleSceneChange(message: SceneChangeMessage): void {
     this.cleanup();
-    this.scene.scene.start(message.sceneName, message.data);
+    if (this.scene && this.scene.scene) {
+      this.scene.scene.start(message.sceneName, message.data);
+    }
   }
 
   private handleRoomActivated(message: RoomActivatedMessage): void {
@@ -335,6 +337,7 @@ export class GuestController {
     this.player.setVelocity(0, 0);
 
     // Visual feedback for teleport - with safe cleanup
+    if (!this.scene || !this.scene.add || !this.scene.tweens) return;
     const flash = this.scene.add.circle(this.player.x, this.player.y, 30, 0x88aaff, 0.6);
     flash.setDepth(50);
     this.scene.tweens.add({
@@ -368,6 +371,7 @@ export class GuestController {
 
   private showReconnectingUI(): void {
     if (this.reconnectOverlay) return; // Already showing
+    if (!this.scene || !this.scene.cameras || !this.scene.cameras.main) return;
 
     const width = this.scene.cameras.main.width;
     const height = this.scene.cameras.main.height;
@@ -436,6 +440,7 @@ export class GuestController {
 
   private showDisconnectedUI(): void {
     this.hideReconnectUI();
+    if (!this.scene || !this.scene.cameras || !this.scene.cameras.main) return;
 
     const width = this.scene.cameras.main.width;
     const height = this.scene.cameras.main.height;
@@ -455,9 +460,13 @@ export class GuestController {
     text.setDepth(1001);
     text.setScrollFactor(0);
 
+    // Capture scene reference for delayed callback
+    const sceneRef = this.scene;
     this.scene.time.delayedCall(2000, () => {
       networkManager.disconnect();
-      this.scene.scene.start('MenuScene');
+      if (sceneRef && sceneRef.scene) {
+        sceneRef.scene.start('MenuScene');
+      }
     });
   }
 
@@ -466,6 +475,7 @@ export class GuestController {
     this.player.setAlpha(0.3);
     this.player.setActive(false);
 
+    if (!this.scene || !this.scene.cameras || !this.scene.cameras.main) return;
     const width = this.scene.cameras.main.width;
 
     this.spectateOverlay = this.scene.add.container(width / 2, 50);
@@ -500,7 +510,9 @@ export class GuestController {
     }
 
     // Return camera to player
-    this.scene.cameras.main.startFollow(this.player);
+    if (this.scene && this.scene.cameras && this.scene.cameras.main) {
+      this.scene.cameras.main.startFollow(this.player);
+    }
   }
 
   update(): void {

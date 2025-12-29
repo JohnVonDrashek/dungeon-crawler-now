@@ -171,7 +171,14 @@ export class NetworkManager {
           reject(new Error('Reconnect timeout'));
         }, 10000);
 
-        this.room!.onPeerJoin((peerId) => {
+        // Safe check for room existence
+        if (!this.room) {
+          clearTimeout(timeout);
+          reject(new Error('Room not available'));
+          return;
+        }
+
+        this.room.onPeerJoin((peerId) => {
           clearTimeout(timeout);
           this._isConnected = true;
           this.reconnectAttempts = 0; // Reset on success
@@ -245,7 +252,14 @@ export class NetworkManager {
           reject(new Error('Connection timeout'));
         }, 15000);
 
-        this.room!.onPeerJoin((peerId) => {
+        // Safe check for room existence
+        if (!this.room) {
+          clearTimeout(timeout);
+          reject(new Error('Room not available'));
+          return;
+        }
+
+        this.room.onPeerJoin((peerId) => {
           if (!connectionResolved) {
             connectionResolved = true;
             clearTimeout(timeout);

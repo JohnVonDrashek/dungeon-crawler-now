@@ -130,6 +130,7 @@ export class HostController {
 
   private showWaitingUI(): void {
     if (this.waitingOverlay) return;
+    if (!this.scene || !this.scene.cameras || !this.scene.cameras.main) return;
 
     const width = this.scene.cameras.main.width;
 
@@ -253,7 +254,7 @@ export class HostController {
 
   private handleGuestAttack(message: PlayerAttackMessage): void {
     // Render visual projectile for guest's attack
-    if (!this.remotePlayer) return;
+    if (!this.remotePlayer || !this.scene) return;
 
     // Validate angle is a number
     const angle = typeof message.angle === 'number' ? message.angle : 0;
