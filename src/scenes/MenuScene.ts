@@ -688,7 +688,7 @@ export class MenuScene extends Phaser.Scene {
     cancelBtn.on('pointerover', () => cancelBtn.setColor('#ff4444'));
     cancelBtn.on('pointerout', () => cancelBtn.setColor('#666666'));
     cancelBtn.on('pointerdown', () => {
-      networkManager.onPeerJoin(() => {}); // Clear callback
+      networkManager.clearOnPeerJoin();
       networkManager.disconnect();
       container.destroy();
       overlay.destroy();
@@ -708,7 +708,7 @@ export class MenuScene extends Phaser.Scene {
         // Check if scene/status still exists
         if (!status.scene) return;
         status.setText('Player connected!');
-        networkManager.onPeerJoin(() => {}); // Clear callback after use
+        networkManager.clearOnPeerJoin();
         this.time.delayedCall(500, () => {
           if (!container.scene) return;
           container.destroy();
@@ -888,5 +888,8 @@ export class MenuScene extends Phaser.Scene {
 
     // Clean up keyboard listeners if any were added
     this.input.keyboard?.removeAllListeners();
+
+    // Clean up network callbacks for safety
+    networkManager.clearOnPeerJoin();
   }
 }

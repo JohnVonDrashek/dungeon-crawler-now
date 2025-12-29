@@ -270,6 +270,13 @@ export class NetworkManager {
     this.onPeerJoinCallback = callback;
   }
 
+  /**
+   * Clear the onPeerJoin callback.
+   */
+  clearOnPeerJoin(): void {
+    this.onPeerJoinCallback = null;
+  }
+
   onPeerLeave(callback: (peerId: string) => void): void {
     this.onPeerLeaveCallback = callback;
   }
