@@ -19,6 +19,12 @@ import {
 import { RemotePlayer } from './RemotePlayer';
 import { Player } from '../entities/Player';
 import { Enemy } from '../entities/Enemy';
+import {
+  validateSyncMessage,
+  validateDamage,
+  validateEnemyId,
+  validatePositionDelta,
+} from './MessageValidator';
 
 export class HostController {
   private scene: Phaser.Scene;
@@ -29,6 +35,9 @@ export class HostController {
   // Map local enemy references to network IDs
   private enemyIdMap: Map<Enemy, string> = new Map();
   private nextEnemyId: number = 1;
+
+  // Track last known guest position for validation
+  private lastGuestPosition: { x: number; y: number } | null = null;
 
   // Network listener ID for cleanup
   private messageListenerId: string | null = null;
@@ -60,13 +69,20 @@ export class HostController {
 
   private setupMessageHandlers(): void {
     this.messageListenerId = networkManager.onMessage((message: SyncMessage, peerId: string) => {
+      // Validate message structure first
+      const msgValidation = validateSyncMessage(message);
+      if (!msgValidation.valid) {
+        console.warn(`[HostController] Invalid message from ${peerId}: ${msgValidation.reason}`);
+        return;
+      }
+
       switch (message.type) {
         case MessageType.PLAYER_POS:
           this.handleGuestPosition(message as PlayerPosMessage);
           break;
 
         case MessageType.PLAYER_HIT:
-          this.handleGuestHit(message as PlayerHitMessage);
+          this.handleGuestHit(message as PlayerHitMessage, peerId);
           break;
 
         case MessageType.PICKUP:
@@ -164,12 +180,46 @@ export class HostController {
   }
 
   private handleGuestPosition(message: PlayerPosMessage): void {
-    if (this.remotePlayer) {
-      this.remotePlayer.applyPositionUpdate(message);
+    if (!this.remotePlayer) return;
+
+    // Validate position delta if we have a previous position
+    if (this.lastGuestPosition) {
+      const posValidation = validatePositionDelta(
+        this.lastGuestPosition.x,
+        this.lastGuestPosition.y,
+        message.x,
+        message.y
+      );
+      if (!posValidation.valid) {
+        console.warn(`[HostController] Position validation failed: ${posValidation.reason}`);
+        // Don't reject completely - could be legitimate room transition
+        // Just log the warning for now
+      }
     }
+
+    // Update last known position
+    this.lastGuestPosition = { x: message.x, y: message.y };
+    this.remotePlayer.applyPositionUpdate(message);
   }
 
-  private handleGuestHit(message: PlayerHitMessage): void {
+  private handleGuestHit(message: PlayerHitMessage, peerId: string): void {
+    // Validate damage value
+    const damageValidation = validateDamage(message.damage);
+    if (!damageValidation.valid) {
+      console.warn(`[HostController] Damage validation failed from ${peerId}: ${damageValidation.reason}`);
+      return;
+    }
+
+    // Build set of valid enemy IDs
+    const validEnemyIds = new Set<string>(this.enemyIdMap.values());
+
+    // Validate enemy ID
+    const enemyValidation = validateEnemyId(message.enemyId, validEnemyIds);
+    if (!enemyValidation.valid) {
+      console.warn(`[HostController] Enemy validation failed from ${peerId}: ${enemyValidation.reason}`);
+      return;
+    }
+
     // Find the enemy by network ID and apply damage
     for (const [enemy, id] of this.enemyIdMap) {
       if (id === message.enemyId && enemy.active) {
