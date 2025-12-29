@@ -43,6 +43,9 @@ export class GuestController {
   private lastSafeY: number = 0;
   private visitedRoomIds: Set<number> = new Set([0]); // Spawn room is always safe
 
+  // Network listener ID for cleanup
+  private messageListenerId: string | null = null;
+
   constructor(scene: Phaser.Scene, player: Player) {
     this.scene = scene;
     this.player = player;
@@ -58,7 +61,7 @@ export class GuestController {
   }
 
   private setupMessageHandlers(): void {
-    networkManager.onMessage((message, peerId) => {
+    this.messageListenerId = networkManager.onMessage((message, peerId) => {
       this.handleMessage(message, peerId);
     });
 
@@ -510,6 +513,11 @@ export class GuestController {
   }
 
   destroy(): void {
+    // Clean up message listener to prevent memory leaks
+    if (this.messageListenerId) {
+      networkManager.offMessage(this.messageListenerId);
+      this.messageListenerId = null;
+    }
     this.cleanup();
   }
 }

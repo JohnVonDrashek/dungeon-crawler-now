@@ -30,6 +30,9 @@ export class HostController {
   private enemyIdMap: Map<Enemy, string> = new Map();
   private nextEnemyId: number = 1;
 
+  // Network listener ID for cleanup
+  private messageListenerId: string | null = null;
+
   // Timers for periodic updates
   private enemyUpdateTimer: number = 0;
   private hostStateTimer: number = 0;
@@ -56,7 +59,7 @@ export class HostController {
   }
 
   private setupMessageHandlers(): void {
-    networkManager.onMessage((message: SyncMessage, peerId: string) => {
+    this.messageListenerId = networkManager.onMessage((message: SyncMessage, peerId: string) => {
       switch (message.type) {
         case MessageType.PLAYER_POS:
           this.handleGuestPosition(message as PlayerPosMessage);
@@ -352,6 +355,11 @@ export class HostController {
   }
 
   destroy(): void {
+    // Clean up message listener to prevent memory leaks
+    if (this.messageListenerId) {
+      networkManager.offMessage(this.messageListenerId);
+      this.messageListenerId = null;
+    }
     this.removeRemotePlayer();
     this.hideWaitingUI();
     this.enemyIdMap.clear();

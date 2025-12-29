@@ -21,7 +21,8 @@ export class NetworkManager {
 
   private onPeerJoinCallback: ((peerId: string) => void) | null = null;
   private onPeerLeaveCallback: ((peerId: string) => void) | null = null;
-  private messageListeners: ((message: SyncMessage, peerId: string) => void)[] = [];
+  private messageListeners: Map<string, (message: SyncMessage, peerId: string) => void> = new Map();
+  private listenerIdCounter: number = 0;
   private onConnectionStateChangeCallback: ((state: ConnectionState) => void) | null = null;
 
   // Reconnection state
@@ -91,9 +92,13 @@ export class NetworkManager {
 
     getMessage((data, peerId) => {
       const message = data as SyncMessage;
-      for (const listener of this.messageListeners) {
-        listener(message, peerId);
-      }
+      this.messageListeners.forEach(callback => {
+        try {
+          callback(message, peerId);
+        } catch (error) {
+          console.error('Message handler error:', error);
+        }
+      });
     });
 
     this.room.onPeerLeave((peerId) => {
@@ -269,8 +274,28 @@ export class NetworkManager {
     this.onPeerLeaveCallback = callback;
   }
 
-  onMessage(callback: (message: SyncMessage, peerId: string) => void): void {
-    this.messageListeners.push(callback);
+  /**
+   * Register a message handler.
+   * @returns Listener ID for removal
+   */
+  onMessage(callback: (message: SyncMessage, peerId: string) => void): string {
+    const id = `listener_${++this.listenerIdCounter}`;
+    this.messageListeners.set(id, callback);
+    return id;
+  }
+
+  /**
+   * Remove a message handler by ID.
+   */
+  offMessage(listenerId: string): void {
+    this.messageListeners.delete(listenerId);
+  }
+
+  /**
+   * Clear all message handlers.
+   */
+  clearMessageListeners(): void {
+    this.messageListeners.clear();
   }
 
   onConnectionStateChange(callback: (state: ConnectionState) => void): void {
@@ -304,7 +329,7 @@ export class NetworkManager {
     this._isConnected = false;
     this._peerId = null;
     this._roomCode = null;
-    this.messageListeners = [];
+    this.messageListeners.clear();
     this.reconnectAttempts = 0;
     this.setConnectionState('disconnected');
   }
