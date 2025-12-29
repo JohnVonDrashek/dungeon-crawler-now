@@ -123,8 +123,11 @@ export class HubScene extends BaseScene {
           // Guest follows host to new scene
           const sceneMsg = message as SceneChangeMessage;
           if (sceneMsg.sceneName === 'GameScene' && sceneMsg.data) {
-            this.registry.set('currentWorld', sceneMsg.data.world);
-            this.registry.set('floor', sceneMsg.data.floor);
+            // Validate scene data before using
+            const world = typeof sceneMsg.data.world === 'number' ? sceneMsg.data.world : 1;
+            const floor = typeof sceneMsg.data.floor === 'number' ? sceneMsg.data.floor : 1;
+            this.registry.set('currentWorld', world);
+            this.registry.set('floor', floor);
             this.audioSystem.stopMusic();
             this.scene.start('GameScene');
           }
