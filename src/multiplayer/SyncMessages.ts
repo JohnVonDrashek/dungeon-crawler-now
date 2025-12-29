@@ -27,6 +27,14 @@ export enum MessageType {
 
   // Co-op combo system
   COMBO_UPDATE = 'COMBO_UPDATE',
+
+  // Co-op revive system
+  PLAYER_DOWNED = 'PLAYER_DOWNED',
+  REVIVE_PROGRESS = 'REVIVE_PROGRESS',
+  REVIVE_COMPLETE = 'REVIVE_COMPLETE',
+
+  // Co-op ping system
+  PING_MARKER = 'PING_MARKER',
 }
 
 export interface PlayerPosMessage {
@@ -191,6 +199,34 @@ export interface ComboUpdateMessage {
   y: number;
 }
 
+export interface PlayerDownedMessage {
+  type: MessageType.PLAYER_DOWNED;
+  playerId: string; // 'host' or 'guest'
+  x: number;
+  y: number;
+}
+
+export interface ReviveProgressMessage {
+  type: MessageType.REVIVE_PROGRESS;
+  targetPlayerId: string;
+  progress: number; // 0 to 1
+}
+
+export interface ReviveCompleteMessage {
+  type: MessageType.REVIVE_COMPLETE;
+  targetPlayerId: string;
+  x: number;
+  y: number;
+}
+
+export interface PingMarkerMessage {
+  type: MessageType.PING_MARKER;
+  senderId: string;
+  x: number;
+  y: number;
+  pingType: 'alert' | 'move' | 'enemy';
+}
+
 export type SyncMessage =
   | PlayerPosMessage
   | PlayerAttackMessage
@@ -212,4 +248,8 @@ export type SyncMessage =
   | PickupMessage
   | EquipItemMessage
   | UseItemMessage
-  | ComboUpdateMessage;
+  | ComboUpdateMessage
+  | PlayerDownedMessage
+  | ReviveProgressMessage
+  | ReviveCompleteMessage
+  | PingMarkerMessage;

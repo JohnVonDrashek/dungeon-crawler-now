@@ -20,6 +20,10 @@ import {
   LootTakenMessage,
   DamageNumberMessage,
   ComboUpdateMessage,
+  PlayerDownedMessage,
+  ReviveProgressMessage,
+  ReviveCompleteMessage,
+  PingMarkerMessage,
   KillFeedEntry,
 } from './SyncMessages';
 import { RemotePlayer } from './RemotePlayer';
@@ -60,6 +64,17 @@ export class GuestController {
   private killFeed: KillFeedEntry[] = [];
   private readonly KILL_FEED_MAX_ENTRIES = 5;
   private readonly KILL_FEED_DURATION_MS = 5000;
+
+  // Revive system
+  private isDowned: boolean = false;
+  private reviveProgressUI: Phaser.GameObjects.Container | null = null;
+  private downedOverlay: Phaser.GameObjects.Container | null = null;
+
+  // Proximity buff system
+  private proximityBuffActive: boolean = false;
+  private proximityBuffUI: Phaser.GameObjects.Container | null = null;
+  private readonly PROXIMITY_BUFF_DISTANCE = 100;
+  private readonly PROXIMITY_BUFF_MULTIPLIER = 1.15;
 
   constructor(scene: Phaser.Scene, player: Player) {
     this.scene = scene;
@@ -140,6 +155,15 @@ export class GuestController {
         break;
       case MessageType.COMBO_UPDATE:
         this.handleComboUpdate(message as ComboUpdateMessage);
+        break;
+      case MessageType.PING_MARKER:
+        this.handlePingMarker(message as PingMarkerMessage);
+        break;
+      case MessageType.REVIVE_PROGRESS:
+        this.handleReviveProgress(message as ReviveProgressMessage);
+        break;
+      case MessageType.REVIVE_COMPLETE:
+        this.handleReviveComplete(message as ReviveCompleteMessage);
         break;
       default:
         // Log unknown message types for debugging
@@ -736,6 +760,356 @@ export class GuestController {
     });
   }
 
+  private handlePingMarker(message: PingMarkerMessage): void {
+    if (!this.scene || !this.scene.add) return;
+
+    const x = typeof message.x === 'number' ? message.x : 0;
+    const y = typeof message.y === 'number' ? message.y : 0;
+    const pingType = message.pingType || 'alert';
+
+    this.showPingMarker(x, y, pingType, message.senderId);
+  }
+
+  showPingMarker(x: number, y: number, pingType: string, senderId: string): void {
+    if (!this.scene || !this.scene.add) return;
+
+    const colors: Record<string, number> = {
+      alert: 0xff4444,
+      move: 0x44ff44,
+      enemy: 0xffaa00,
+    };
+    const color = colors[pingType] || 0xffffff;
+    const senderColor = senderId === 'host' ? 0x88ff88 : 0x88aaff;
+
+    const container = this.scene.add.container(x, y);
+    container.setDepth(90);
+
+    // Ping ring
+    const ring = this.scene.add.circle(0, 0, 20, color, 0);
+    ring.setStrokeStyle(3, color);
+    container.add(ring);
+
+    // Center dot
+    const dot = this.scene.add.circle(0, 0, 5, senderColor);
+    container.add(dot);
+
+    // Icon based on type
+    const icons: Record<string, string> = {
+      alert: '!',
+      move: '→',
+      enemy: '⚔',
+    };
+    const icon = this.scene.add.text(0, -35, icons[pingType] || '?', {
+      fontSize: '16px',
+      color: `#${color.toString(16).padStart(6, '0')}`,
+      stroke: '#000000',
+      strokeThickness: 2,
+    });
+    icon.setOrigin(0.5);
+    container.add(icon);
+
+    // Expand animation
+    this.scene.tweens.add({
+      targets: ring,
+      scale: 2,
+      alpha: 0,
+      duration: 1500,
+      repeat: 2,
+    });
+
+    // Remove after animation
+    this.scene.time.delayedCall(4500, () => {
+      if (container && container.active) container.destroy();
+    });
+  }
+
+  // Send ping from guest
+  sendPing(x: number, y: number, pingType: 'alert' | 'move' | 'enemy'): void {
+    const message: PingMarkerMessage = {
+      type: MessageType.PING_MARKER,
+      senderId: 'guest',
+      x,
+      y,
+      pingType,
+    };
+    networkManager.broadcast(message);
+
+    // Show locally too
+    this.showPingMarker(x, y, pingType, 'guest');
+  }
+
+  private handleReviveProgress(message: ReviveProgressMessage): void {
+    if (message.targetPlayerId !== 'guest' || !this.isDowned) return;
+
+    const progress = typeof message.progress === 'number' ? message.progress : 0;
+
+    // Create or update progress UI
+    if (!this.reviveProgressUI) {
+      this.createReviveProgressUI();
+    }
+
+    this.updateReviveProgressUI(progress);
+  }
+
+  private createReviveProgressUI(): void {
+    if (!this.scene || !this.scene.add || this.reviveProgressUI) return;
+
+    const cam = this.scene.cameras.main;
+    this.reviveProgressUI = this.scene.add.container(cam.width / 2, cam.height / 2 + 50);
+    this.reviveProgressUI.setScrollFactor(0);
+    this.reviveProgressUI.setDepth(200);
+
+    // Background bar
+    const bg = this.scene.add.rectangle(0, 0, 100, 15, 0x333333);
+    bg.setStrokeStyle(2, 0x44ff44);
+    this.reviveProgressUI.add(bg);
+
+    // Progress bar
+    const fill = this.scene.add.rectangle(-48, 0, 0, 11, 0x44ff44);
+    fill.setOrigin(0, 0.5);
+    fill.setName('fill');
+    this.reviveProgressUI.add(fill);
+
+    // Text
+    const text = this.scene.add.text(0, -20, 'BEING REVIVED...', {
+      fontSize: '12px',
+      fontFamily: 'Roboto Mono',
+      color: '#44ff44',
+    });
+    text.setOrigin(0.5);
+    this.reviveProgressUI.add(text);
+  }
+
+  private updateReviveProgressUI(progress: number): void {
+    if (!this.reviveProgressUI) return;
+
+    const fill = this.reviveProgressUI.getByName('fill') as Phaser.GameObjects.Rectangle;
+    if (fill) {
+      fill.width = 96 * Math.min(1, progress);
+    }
+  }
+
+  private handleReviveComplete(message: ReviveCompleteMessage): void {
+    if (message.targetPlayerId !== 'guest') return;
+
+    // Exit downed state
+    this.isDowned = false;
+
+    // Destroy UI elements
+    if (this.reviveProgressUI) {
+      this.reviveProgressUI.destroy();
+      this.reviveProgressUI = null;
+    }
+    if (this.downedOverlay) {
+      this.downedOverlay.destroy();
+      this.downedOverlay = null;
+    }
+
+    // Restore player
+    const x = typeof message.x === 'number' ? message.x : this.player.x;
+    const y = typeof message.y === 'number' ? message.y : this.player.y;
+
+    this.player.setPosition(x, y);
+    this.player.hp = Math.floor(this.player.maxHp * 0.5); // Revive with 50% HP
+    this.player.setAlpha(1);
+    this.player.setActive(true);
+
+    // Show notification
+    this.showReviveNotification();
+  }
+
+  private showReviveNotification(): void {
+    if (!this.scene || !this.scene.add) return;
+
+    const cam = this.scene.cameras.main;
+    const text = this.scene.add.text(cam.width / 2, cam.height / 2, 'REVIVED!', {
+      fontSize: '24px',
+      fontFamily: 'Cinzel, Georgia, serif',
+      color: '#44ff44',
+      stroke: '#000000',
+      strokeThickness: 3,
+    });
+    text.setOrigin(0.5);
+    text.setScrollFactor(0);
+    text.setDepth(200);
+    text.setScale(0.5);
+
+    this.scene.tweens.add({
+      targets: text,
+      scale: 1,
+      duration: 200,
+      ease: 'Back.easeOut',
+      onComplete: () => {
+        this.scene.time.delayedCall(1000, () => {
+          this.scene.tweens.add({
+            targets: text,
+            alpha: 0,
+            y: cam.height / 2 - 30,
+            duration: 400,
+            onComplete: () => {
+              if (text && text.active) text.destroy();
+            },
+          });
+        });
+      },
+    });
+  }
+
+  // Called when guest player takes fatal damage
+  enterDownedState(): void {
+    if (this.isDowned) return;
+
+    this.isDowned = true;
+    this.player.setAlpha(0.5);
+    this.player.setActive(false);
+
+    // Broadcast downed state to host
+    const message: PlayerDownedMessage = {
+      type: MessageType.PLAYER_DOWNED,
+      playerId: 'guest',
+      x: this.player.x,
+      y: this.player.y,
+    };
+    networkManager.broadcast(message);
+
+    // Show downed overlay
+    this.showDownedOverlay();
+  }
+
+  private showDownedOverlay(): void {
+    if (!this.scene || !this.scene.add) return;
+
+    const cam = this.scene.cameras.main;
+    this.downedOverlay = this.scene.add.container(cam.width / 2, cam.height / 2);
+    this.downedOverlay.setScrollFactor(0);
+    this.downedOverlay.setDepth(150);
+
+    // Red vignette overlay
+    const vignette = this.scene.add.rectangle(0, 0, cam.width, cam.height, 0x440000, 0.4);
+    this.downedOverlay.add(vignette);
+
+    // Downed text
+    const text = this.scene.add.text(0, -30, 'YOU ARE DOWN!', {
+      fontSize: '24px',
+      fontFamily: 'Cinzel, Georgia, serif',
+      color: '#ff4444',
+      stroke: '#000000',
+      strokeThickness: 3,
+    });
+    text.setOrigin(0.5);
+    this.downedOverlay.add(text);
+
+    // Wait message
+    const subtext = this.scene.add.text(0, 10, 'Waiting for host to revive...', {
+      fontSize: '12px',
+      fontFamily: 'Roboto Mono',
+      color: '#ffffff',
+    });
+    subtext.setOrigin(0.5);
+    this.downedOverlay.add(subtext);
+
+    // Pulse animation on text
+    this.scene.tweens.add({
+      targets: text,
+      alpha: 0.6,
+      duration: 800,
+      yoyo: true,
+      repeat: -1,
+    });
+  }
+
+  getIsDowned(): boolean {
+    return this.isDowned;
+  }
+
+  private updateProximityBuff(): void {
+    if (!this.hostPlayer || this.isDowned) {
+      if (this.proximityBuffActive) {
+        this.deactivateProximityBuff();
+      }
+      return;
+    }
+
+    const dist = Phaser.Math.Distance.Between(
+      this.player.x,
+      this.player.y,
+      this.hostPlayer.x,
+      this.hostPlayer.y
+    );
+
+    const shouldBeActive = dist <= this.PROXIMITY_BUFF_DISTANCE;
+
+    if (shouldBeActive && !this.proximityBuffActive) {
+      this.activateProximityBuff();
+    } else if (!shouldBeActive && this.proximityBuffActive) {
+      this.deactivateProximityBuff();
+    }
+  }
+
+  private activateProximityBuff(): void {
+    this.proximityBuffActive = true;
+    this.createProximityBuffUI();
+  }
+
+  private deactivateProximityBuff(): void {
+    this.proximityBuffActive = false;
+    this.destroyProximityBuffUI();
+  }
+
+  private createProximityBuffUI(): void {
+    if (!this.scene || !this.scene.add || this.proximityBuffUI) return;
+
+    const cam = this.scene.cameras.main;
+    this.proximityBuffUI = this.scene.add.container(cam.width / 2, 30);
+    this.proximityBuffUI.setScrollFactor(0);
+    this.proximityBuffUI.setDepth(100);
+
+    // Background
+    const bg = this.scene.add.rectangle(0, 0, 120, 24, 0x000000, 0.6);
+    bg.setStrokeStyle(1, 0xffdd44);
+    this.proximityBuffUI.add(bg);
+
+    // Icon
+    const icon = this.scene.add.text(-50, 0, '⚡', {
+      fontSize: '14px',
+    });
+    icon.setOrigin(0.5);
+    this.proximityBuffUI.add(icon);
+
+    // Text
+    const text = this.scene.add.text(5, 0, 'CO-OP BOOST', {
+      fontSize: '10px',
+      fontFamily: 'Roboto Mono',
+      color: '#ffdd44',
+    });
+    text.setOrigin(0.5);
+    this.proximityBuffUI.add(text);
+
+    // Subtle pulse animation
+    this.scene.tweens.add({
+      targets: bg,
+      alpha: 0.4,
+      duration: 600,
+      yoyo: true,
+      repeat: -1,
+    });
+  }
+
+  private destroyProximityBuffUI(): void {
+    if (this.proximityBuffUI) {
+      this.proximityBuffUI.destroy();
+      this.proximityBuffUI = null;
+    }
+  }
+
+  getProximityBuffMultiplier(): number {
+    return this.proximityBuffActive ? this.PROXIMITY_BUFF_MULTIPLIER : 1.0;
+  }
+
+  isProximityBuffActive(): boolean {
+    return this.proximityBuffActive;
+  }
+
   private reconnectOverlay: Phaser.GameObjects.Container | null = null;
   private reconnectDotTimer: Phaser.Time.TimerEvent | null = null;
 
@@ -927,6 +1301,9 @@ export class GuestController {
 
     // Smooth interpolation for all guest enemies
     this.updateEnemyInterpolation();
+
+    // Proximity buff check
+    this.updateProximityBuff();
   }
 
   private updateEnemyInterpolation(): void {
