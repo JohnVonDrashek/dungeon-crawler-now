@@ -220,6 +220,7 @@ export class PrideBoss extends SinBoss {
 export class GreedBoss extends SinBoss {
   private attackPattern: number = 0;
   private goldPiles: Phaser.GameObjects.Sprite[] = [];
+  private readonly baseSpeed: number;
 
   constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
     super(scene, x, y, 'greed_idle', floor, {
@@ -229,6 +230,7 @@ export class GreedBoss extends SinBoss {
       speed: 75,
     });
     this.setupSpriteAnimations('greed', false);
+    this.baseSpeed = this.speed;
   }
 
   protected onPhaseChange(newPhase: number): void {
@@ -236,7 +238,7 @@ export class GreedBoss extends SinBoss {
       this.setTint(0xffd700);
     } else if (newPhase === 3) {
       this.setTint(0x15803d);
-      this.speed *= 1.3;
+      this.speed = Math.floor(this.baseSpeed * 1.3);
     }
   }
 
@@ -324,8 +326,16 @@ export class GreedBoss extends SinBoss {
     }
   }
 
+  update(time: number, delta: number): void {
+    super.update(time, delta);
+
+    // Clean up destroyed gold piles from array to prevent memory leak
+    this.goldPiles = this.goldPiles.filter(pile => pile.active);
+  }
+
   destroy(fromScene?: boolean): void {
-    this.goldPiles.forEach(p => p.destroy());
+    this.goldPiles.forEach(p => p.active && p.destroy());
+    this.goldPiles = [];
     super.destroy(fromScene);
   }
 }
@@ -335,6 +345,7 @@ export class GreedBoss extends SinBoss {
 export class WrathBoss extends SinBoss {
   private attackPattern: number = 0;
   private readonly baseAttack: number;
+  private readonly baseSpeed: number;
 
   constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
     super(scene, x, y, 'wrath_idle', floor, {
@@ -345,16 +356,17 @@ export class WrathBoss extends SinBoss {
     });
     this.setupSpriteAnimations('wrath', false);
     this.baseAttack = this.attack;
+    this.baseSpeed = this.speed;
   }
 
   protected onPhaseChange(newPhase: number): void {
     if (newPhase === 2) {
       this.attack = Math.floor(this.baseAttack * 1.3);
-      this.speed *= 1.15;
+      this.speed = Math.floor(this.baseSpeed * 1.15);
       this.setTint(0xf97316);
     } else if (newPhase === 3) {
       this.attack = Math.floor(this.baseAttack * 1.7);
-      this.speed *= 1.3;
+      this.speed = Math.floor(this.baseSpeed * 1.5);
       this.setTint(0xfbbf24);
       // Rage aura
       this.scene.tweens.add({
@@ -572,6 +584,13 @@ export class EnvyBoss extends SinBoss {
     this.setupSpriteAnimations('envy', false);
   }
 
+  update(time: number, delta: number): void {
+    super.update(time, delta);
+
+    // Clean up dead shadow clones from array to prevent memory leak
+    this.shadowClones = this.shadowClones.filter(clone => clone.active);
+  }
+
   protected onPhaseChange(newPhase: number): void {
     if (newPhase === 2) {
       this.spawnShadowClone();
@@ -662,6 +681,15 @@ export class EnvyBoss extends SinBoss {
       this.spawnProjectile(angle, 130, 0x1f2937, 1.6);
     }
   }
+
+  destroy(fromScene?: boolean): void {
+    // Clean up shadow clones
+    this.shadowClones.forEach(clone => {
+      if (clone.active) clone.destroy();
+    });
+    this.shadowClones = [];
+    super.destroy(fromScene);
+  }
 }
 
 // ==================== GLUTTONY BOSS ====================
@@ -669,6 +697,7 @@ export class EnvyBoss extends SinBoss {
 export class GluttonyBoss extends SinBoss {
   private currentScale: number = 2;
   private attackPattern: number = 0;
+  private readonly baseSpeed: number;
 
   constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
     super(scene, x, y, 'gluttony_idle', floor, {
@@ -678,6 +707,7 @@ export class GluttonyBoss extends SinBoss {
       speed: 45,
     });
     this.setupSpriteAnimations('gluttony', false);
+    this.baseSpeed = this.speed;
   }
 
   protected onPhaseChange(newPhase: number): void {
@@ -689,7 +719,7 @@ export class GluttonyBoss extends SinBoss {
       this.currentScale = 2.6;
       this.setScale(this.currentScale);
       this.setTint(0xd97706);
-      this.speed *= 1.2;
+      this.speed = Math.floor(this.baseSpeed * 1.2);
     }
   }
 
@@ -768,6 +798,7 @@ export class LustBoss extends SinBoss {
   private readonly PULL_RADIUS = TILE_SIZE * 7;
   private readonly PULL_STRENGTH = 50;
   private attackPattern: number = 0;
+  private readonly baseSpeed: number;
 
   constructor(scene: Phaser.Scene, x: number, y: number, floor: number) {
     super(scene, x, y, 'lust_idle', floor, {
@@ -777,6 +808,7 @@ export class LustBoss extends SinBoss {
       speed: 70,
     });
     this.setupSpriteAnimations('lust', false);
+    this.baseSpeed = this.speed;
     this.createPullAura();
   }
 
@@ -795,7 +827,7 @@ export class LustBoss extends SinBoss {
       this.setTint(0xf472b6);
     } else if (newPhase === 3) {
       this.setTint(0xfce7f3);
-      this.speed *= 1.3;
+      this.speed = Math.floor(this.baseSpeed * 1.3);
     }
   }
 

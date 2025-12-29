@@ -476,6 +476,7 @@ export class InventoryUI {
       [ItemRarity.UNCOMMON]: '#22cc22',
       [ItemRarity.RARE]: '#3399ff',
       [ItemRarity.EPIC]: '#aa44ff',
+      [ItemRarity.LEGENDARY]: '#ffd700',
     };
     return colors[rarity];
   }

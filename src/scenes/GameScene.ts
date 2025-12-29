@@ -857,7 +857,9 @@ export class GameScene extends BaseScene {
       }
 
       // Boss drops guaranteed rare+ loot and a weapon
-      if (enemy instanceof BossEnemy) {
+      // Sin bosses have scale >= 2, regular bosses extend BossEnemy
+      const isBoss = enemy instanceof BossEnemy || enemy.scale >= 2;
+      if (isBoss) {
         const loot = this.lootSystem.generateGuaranteedLoot(ItemRarity.RARE);
         this.lootDropManager.spawnItemDrop(enemy.x, enemy.y, loot);
 
@@ -869,8 +871,16 @@ export class GameScene extends BaseScene {
         const bossGold = 50 + this.floor * 20;
         this.lootDropManager.spawnGoldDrop(enemy.x - 24, enemy.y, bossGold);
 
-        // Check for victory on final boss
-        if (this.isFinalBoss) {
+        // Handle boss victory
+        if (this.currentWorld) {
+          // World mode: defeating boss on floor 3 completes the world
+          this.time.delayedCall(1500, () => {
+            progressionManager.advanceFloor();
+            this.saveGame();
+            this.handleWorldComplete();
+          });
+        } else if (this.isFinalBoss) {
+          // Legacy mode: final boss triggers victory
           this.time.delayedCall(1500, () => {
             this.handleVictory();
           });
@@ -934,6 +944,7 @@ export class GameScene extends BaseScene {
     this.events.on('playerLevelUp', () => {
       this.audioSystem.play('sfx_levelup', 0.5);
       this.visualEffects.showLevelUpNotification();
+      this.levelUpUI.show();
     });
 
     // === SIN ENEMY EVENTS ===
@@ -1089,6 +1100,22 @@ export class GameScene extends BaseScene {
     this.cameras.main.flash(2000, 255, 215, 0);
     this.time.delayedCall(2000, () => {
       this.scene.start('VictoryScene', stats);
+    });
+  }
+
+  private handleWorldComplete(): void {
+    // World boss defeated - return to hub
+    this.cameras.main.flash(2000, 255, 215, 0);
+    this.visualEffects.showGameMessage(`${this.currentWorld} World Complete!`);
+
+    // Clear floor stats from registry
+    this.registry.set('floor', 1);
+    this.registry.set('currentWorld', null);
+    this.registry.set('enemiesKilled', 0);
+    this.registry.set('itemsCollected', 0);
+
+    this.time.delayedCall(2000, () => {
+      this.scene.start('HubScene');
     });
   }
 

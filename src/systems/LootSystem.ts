@@ -7,6 +7,7 @@ const RARITY_WEIGHTS = {
     [ItemRarity.UNCOMMON]: 25,
     [ItemRarity.RARE]: 12,
     [ItemRarity.EPIC]: 3,
+    [ItemRarity.LEGENDARY]: 0.5,
   },
 };
 
@@ -40,7 +41,7 @@ export class LootSystem {
   // Generate guaranteed loot (for chests, bosses, etc.)
   generateGuaranteedLoot(minRarity: ItemRarity = ItemRarity.COMMON): Item {
     // Roll for rarity at or above minimum
-    const rarities = [ItemRarity.COMMON, ItemRarity.UNCOMMON, ItemRarity.RARE, ItemRarity.EPIC];
+    const rarities = [ItemRarity.COMMON, ItemRarity.UNCOMMON, ItemRarity.RARE, ItemRarity.EPIC, ItemRarity.LEGENDARY];
     const minIndex = rarities.indexOf(minRarity);
     const validRarities = rarities.slice(minIndex);
 
@@ -65,12 +66,13 @@ export class LootSystem {
   private rollRarity(floor: number): ItemRarity {
     const weights = { ...RARITY_WEIGHTS.base };
 
-    // Higher floors increase rare/epic chances
+    // Higher floors increase rare/epic/legendary chances
     const floorBonus = Math.min(floor * 2, 30);
     weights[ItemRarity.COMMON] = Math.max(20, weights[ItemRarity.COMMON] - floorBonus);
-    weights[ItemRarity.UNCOMMON] += Math.floor(floorBonus * 0.4);
-    weights[ItemRarity.RARE] += Math.floor(floorBonus * 0.4);
+    weights[ItemRarity.UNCOMMON] += Math.floor(floorBonus * 0.35);
+    weights[ItemRarity.RARE] += Math.floor(floorBonus * 0.35);
     weights[ItemRarity.EPIC] += Math.floor(floorBonus * 0.2);
+    weights[ItemRarity.LEGENDARY] += Math.floor(floorBonus * 0.1);
 
     const totalWeight = Object.values(weights).reduce((a, b) => a + b, 0);
     const roll = Math.random() * totalWeight;

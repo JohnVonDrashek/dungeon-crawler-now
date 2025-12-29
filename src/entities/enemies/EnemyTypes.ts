@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { Enemy } from '../Enemy';
+import { Enemy, EnemyState } from '../Enemy';
 import { Player } from '../Player';
 import { TILE_SIZE } from '../../utils/constants';
 
@@ -340,7 +340,7 @@ export class GreedEnemy extends Enemy {
 
     // If player has no gold, flee instead of chase
     const player = this.target as Player;
-    if (player.gold <= 0 && this.state === 'chase') {
+    if (player.gold <= 0 && this.getAiState() === EnemyState.CHASE) {
       // Override chase to flee
       const angle = Phaser.Math.Angle.Between(player.x, player.y, this.x, this.y);
       this.setVelocity(Math.cos(angle) * this.speed * 0.8, Math.sin(angle) * this.speed * 0.8);

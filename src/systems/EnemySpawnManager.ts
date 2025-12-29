@@ -379,14 +379,19 @@ export class EnemySpawnManager {
   }
 
   createHealthBar(enemy: Enemy): void {
-    const container = this.scene.add.container(enemy.x, enemy.y - 15);
+    // Sin bosses have scale >= 2, regular bosses extend BossEnemy
+    const isBoss = enemy instanceof BossEnemy || enemy.scale >= 2;
+    const yOffset = isBoss ? -30 : -15; // Position higher for larger bosses
+    const container = this.scene.add.container(enemy.x, enemy.y + yOffset);
     container.setDepth(50);
 
-    const bgWidth = enemy instanceof BossEnemy ? 40 : 20;
-    const bg = this.scene.add.rectangle(0, 0, bgWidth, 4, 0x333333);
-    const bar = this.scene.add.rectangle(-bgWidth / 2, 0, bgWidth, 4, 0x22cc22);
+    const bgWidth = isBoss ? 50 : 20;
+    const barHeight = isBoss ? 6 : 4;
+    const bg = this.scene.add.rectangle(0, 0, bgWidth, barHeight, 0x333333);
+    const bar = this.scene.add.rectangle(-bgWidth / 2, 0, bgWidth, barHeight, isBoss ? 0xcc2222 : 0x22cc22);
     bar.setOrigin(0, 0.5);
     bar.setName('bar');
+    bar.setData('isBoss', isBoss);
 
     container.add([bg, bar]);
     this.healthBars.set(enemy, container);
@@ -396,18 +401,26 @@ export class EnemySpawnManager {
     const container = this.healthBars.get(enemy);
     if (!container) return;
 
-    container.setPosition(enemy.x, enemy.y - 15);
-
     const bar = container.getByName('bar') as Phaser.GameObjects.Rectangle;
-    if (bar) {
-      const percent = enemy.hp / enemy.maxHp;
-      const maxWidth = enemy instanceof BossEnemy ? 40 : 20;
-      bar.width = maxWidth * Math.max(0, percent);
+    if (!bar) return;
 
-      // Color based on health
-      if (percent > 0.5) bar.setFillStyle(0x22cc22);
-      else if (percent > 0.25) bar.setFillStyle(0xcccc22);
-      else bar.setFillStyle(0xcc2222);
+    const isBoss = bar.getData('isBoss') as boolean;
+    const yOffset = isBoss ? -30 : -15;
+    container.setPosition(enemy.x, enemy.y + yOffset);
+
+    const percent = enemy.hp / enemy.maxHp;
+    const maxWidth = isBoss ? 50 : 20;
+    bar.width = maxWidth * Math.max(0, percent);
+
+    // Color based on health (bosses stay red)
+    if (isBoss) {
+      bar.setFillStyle(0xcc2222);
+    } else if (percent > 0.5) {
+      bar.setFillStyle(0x22cc22);
+    } else if (percent > 0.25) {
+      bar.setFillStyle(0xcccc22);
+    } else {
+      bar.setFillStyle(0xcc2222);
     }
   }
 

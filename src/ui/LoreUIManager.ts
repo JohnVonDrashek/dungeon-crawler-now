@@ -252,10 +252,11 @@ export class LoreUIManager {
 
     const camera = this.scene.cameras.main;
     const container = this.scene.add.container(
-      camera.scrollX + camera.width / 2,
-      camera.scrollY + camera.height / 2
+      camera.width / 2,
+      camera.height / 2
     );
     container.setDepth(300);
+    container.setScrollFactor(0); // Fix to camera viewport
     this.activeLoreModal = container;
 
     // Dark overlay

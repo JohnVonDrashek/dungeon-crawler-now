@@ -339,8 +339,8 @@ export class HazardSystem {
   private damagePlayer(damage: number, source: string): void {
     if (this.player.getIsInvulnerable()) return;
 
-    // Prevent damage spam (100ms cooldown)
-    const now = Date.now();
+    // Prevent damage spam (100ms cooldown) - use game time so pausing stops damage
+    const now = this.scene.time.now;
     if (now - this.lastDamageTime < 100) return;
     this.lastDamageTime = now;
 

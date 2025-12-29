@@ -10,6 +10,7 @@ export enum ItemRarity {
   UNCOMMON = 'uncommon',
   RARE = 'rare',
   EPIC = 'epic',
+  LEGENDARY = 'legendary',
 }
 
 export interface ItemStats {
@@ -43,6 +44,7 @@ export const RARITY_COLORS: Record<ItemRarity, number> = {
   [ItemRarity.UNCOMMON]: 0x22cc22,
   [ItemRarity.RARE]: 0x3399ff,
   [ItemRarity.EPIC]: 0xaa44ff,
+  [ItemRarity.LEGENDARY]: 0xffd700,
 };
 
 // Item templates
@@ -149,6 +151,7 @@ const RARITY_MULTIPLIERS: Record<ItemRarity, number> = {
   [ItemRarity.UNCOMMON]: 1.5,
   [ItemRarity.RARE]: 2.2,
   [ItemRarity.EPIC]: 3,
+  [ItemRarity.LEGENDARY]: 4,
 };
 
 const RARITY_BONUS_STATS: Record<ItemRarity, number> = {
@@ -156,6 +159,7 @@ const RARITY_BONUS_STATS: Record<ItemRarity, number> = {
   [ItemRarity.UNCOMMON]: 1,
   [ItemRarity.RARE]: 2,
   [ItemRarity.EPIC]: 3,
+  [ItemRarity.LEGENDARY]: 4,
 };
 
 function randomPick<T>(arr: T[]): T {
@@ -266,7 +270,7 @@ export function createItemFromWeapon(weapon: Weapon): Item {
     ItemRarity.UNCOMMON,
     ItemRarity.RARE,
     ItemRarity.EPIC,
-    ItemRarity.EPIC, // Legendary maps to Epic (highest)
+    ItemRarity.LEGENDARY,
   ];
 
   const rarity = rarityMap[weapon.rarity] || ItemRarity.COMMON;

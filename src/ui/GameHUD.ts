@@ -277,11 +277,13 @@ export class GameHUD {
     // Level & XP
     this.levelText.setText(`LVL ${this.player.level}`);
 
-    const xpPercent = this.player.xp / this.player.xpToNextLevel;
+    // Guard against division by zero
+    const xpToNext = this.player.xpToNextLevel || 1;
+    const xpPercent = this.player.xp / xpToNext;
     this.xpBarFill.clear();
     if (xpPercent > 0) {
       this.xpBarFill.fillStyle(0x8844cc, 1);
-      this.xpBarFill.fillRoundedRect(10, 74, Math.max(2, this.barWidth * xpPercent), 8, 2);
+      this.xpBarFill.fillRoundedRect(10, 74, Math.max(2, this.barWidth * Math.min(1, xpPercent)), 8, 2);
     }
 
     // Stats

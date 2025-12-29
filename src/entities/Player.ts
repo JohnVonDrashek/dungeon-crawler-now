@@ -305,6 +305,8 @@ export class Player extends Phaser.Physics.Arcade.Sprite {
     switch (stat) {
       case 'hp':
         this.baseMaxHp += 10;
+        // Also restore HP by the same amount when allocating HP stat
+        this.hp = Math.min(this.hp + 10, this.baseMaxHp + this.inventory.getEquipmentStats().maxHp);
         break;
       case 'attack':
         this.baseAttack += 2;

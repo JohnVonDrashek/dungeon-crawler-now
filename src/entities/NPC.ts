@@ -208,6 +208,7 @@ export const BOSS_WARNINGS: Record<SinWorld, DialogueLine[]> = {
 export class NPC extends Phaser.Physics.Arcade.Sprite {
   private npcData: NPCData;
   private interactIndicator: Phaser.GameObjects.Text | null = null;
+  private npcLight: Phaser.GameObjects.Light | null = null;
 
   constructor(scene: Phaser.Scene, x: number, y: number, data: NPCData) {
     super(scene, x, y, data.texture);
@@ -237,9 +238,9 @@ export class NPC extends Phaser.Physics.Arcade.Sprite {
     });
 
     // Add real point light for NPC glow
-    const npcLight = scene.lights.addLight(x, y, 70, data.tint || 0x8b5cf6, 0.4);
+    this.npcLight = scene.lights.addLight(x, y, 70, data.tint || 0x8b5cf6, 0.4);
     scene.tweens.add({
-      targets: npcLight,
+      targets: this.npcLight,
       intensity: { from: 0.3, to: 0.5 },
       duration: 2000,
       yoyo: true,
@@ -298,6 +299,27 @@ export class NPC extends Phaser.Physics.Arcade.Sprite {
 
   getDialogue(): DialogueLine[] {
     return this.npcData.dialogue;
+  }
+
+  destroy(fromScene?: boolean): void {
+    // Clean up tweens targeting this NPC's components
+    this.scene?.tweens.killTweensOf(this);
+
+    // Clean up indicator
+    if (this.interactIndicator) {
+      this.scene?.tweens.killTweensOf(this.interactIndicator);
+      this.interactIndicator.destroy();
+      this.interactIndicator = null;
+    }
+
+    // Clean up light
+    if (this.npcLight && this.scene) {
+      this.scene.tweens.killTweensOf(this.npcLight);
+      this.scene.lights.removeLight(this.npcLight);
+      this.npcLight = null;
+    }
+
+    super.destroy(fromScene);
   }
 }
 

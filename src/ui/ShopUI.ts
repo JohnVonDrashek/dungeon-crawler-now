@@ -102,6 +102,7 @@ export class ShopUI {
       [ItemRarity.UNCOMMON]: 2,
       [ItemRarity.RARE]: 4,
       [ItemRarity.EPIC]: 8,
+      [ItemRarity.LEGENDARY]: 16,
     };
 
     const typeBase: Record<ItemType, number> = {
