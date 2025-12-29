@@ -25,6 +25,7 @@ import {
   ReviveCompleteMessage,
   PingMarkerMessage,
   XpGainedMessage,
+  EmoteMessage,
 } from './SyncMessages';
 import { RemotePlayer } from './RemotePlayer';
 import { Player } from '../entities/Player';
@@ -349,6 +350,10 @@ export class HostController {
 
         case MessageType.PLAYER_DOWNED:
           this.handleGuestDowned(message as PlayerDownedMessage);
+          break;
+
+        case MessageType.EMOTE:
+          this.handleGuestEmote(message as EmoteMessage);
           break;
 
         default:
@@ -734,6 +739,96 @@ export class HostController {
 
     // Show locally too
     this.showPingMarker(x, y, pingType, 'host');
+  }
+
+  private handleGuestEmote(message: EmoteMessage): void {
+    if (!this.remotePlayer || !this.scene || !this.scene.add) return;
+
+    const x = typeof message.x === 'number' ? message.x : this.remotePlayer.x;
+    const y = typeof message.y === 'number' ? message.y : this.remotePlayer.y;
+    const emoteType = message.emoteType || 'wave';
+
+    this.showEmoteBubble(x, y, emoteType, 'guest');
+  }
+
+  // Send emote from host
+  sendEmote(emoteType: EmoteMessage['emoteType']): void {
+    const message: EmoteMessage = {
+      type: MessageType.EMOTE,
+      senderId: 'host',
+      emoteType,
+      x: this.player.x,
+      y: this.player.y,
+    };
+    networkManager.broadcast(message);
+
+    // Show locally too
+    this.showEmoteBubble(this.player.x, this.player.y, emoteType, 'host');
+  }
+
+  private showEmoteBubble(x: number, y: number, emoteType: string, senderId: string): void {
+    if (!this.scene || !this.scene.add) return;
+
+    // Emote icons
+    const emoteIcons: Record<string, string> = {
+      wave: '👋',
+      thumbsUp: '👍',
+      help: '❗',
+      follow: '👉',
+      wait: '✋',
+      cheer: '🎉',
+    };
+
+    const icon = emoteIcons[emoteType] || '❓';
+    const senderColor = senderId === 'host' ? 0xffffff : 0x88aaff;
+
+    // Create bubble container
+    const container = this.scene.add.container(x, y - 50);
+    container.setDepth(120);
+
+    // Bubble background
+    const bubble = this.scene.add.circle(0, 0, 20, senderColor, 0.9);
+    bubble.setStrokeStyle(2, 0x000000);
+    container.add(bubble);
+
+    // Emote icon
+    const emoteText = this.scene.add.text(0, 0, icon, {
+      fontSize: '18px',
+    });
+    emoteText.setOrigin(0.5);
+    container.add(emoteText);
+
+    // Animate: float up and pop in/out
+    container.setScale(0);
+    this.scene.tweens.add({
+      targets: container,
+      scale: 1.2,
+      duration: 150,
+      ease: 'Back.easeOut',
+      onComplete: () => {
+        this.scene.tweens.add({
+          targets: container,
+          scale: 1,
+          duration: 100,
+          onComplete: () => {
+            // Hold for a moment
+            this.scene.time.delayedCall(1500, () => {
+              this.scene.tweens.add({
+                targets: container,
+                y: y - 80,
+                alpha: 0,
+                scale: 0.5,
+                duration: 400,
+                ease: 'Cubic.easeIn',
+                onComplete: () => {
+                  if (container && container.active) container.destroy();
+                },
+              });
+            });
+          },
+        });
+      },
+    });
   }
 
   update(delta: number): void {
