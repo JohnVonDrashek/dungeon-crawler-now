@@ -26,6 +26,7 @@ interface SessionInfo {
 const STORAGE_KEY = 'mplog_session';
 const AUTO_SAVE_INTERVAL = 5000; // Save to localStorage every 5 seconds
 const AUTO_SAVE_THRESHOLD = 10; // Also save every 10 new logs
+const LOG_SERVER_URL = 'http://localhost:3001/log';
 
 class MultiplayerDebugLogger {
   private logs: LogEntry[] = [];
@@ -409,12 +410,44 @@ class MultiplayerDebugLogger {
     console.log('------------------------\n');
   }
 
-  // Auto-download on disconnect (call from NetworkManager)
+  // Send logs to local log server
+  async sendToServer(): Promise<boolean> {
+    if (typeof fetch === 'undefined') return false;
+
+    try {
+      const response = await fetch(LOG_SERVER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomCode: this.roomCode,
+          role: this.role,
+          sessionId: this.sessionId,
+          content: this.exportLogs(),
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        this.log('info', 'Logger', `Logs sent to server: ${result.filename}`);
+        return true;
+      }
+      return false;
+    } catch {
+      // Server not running - silently fail
+      return false;
+    }
+  }
+
+  // Auto-save on disconnect (call from NetworkManager)
   onDisconnect(): void {
     this.log('warn', 'Logger', 'Disconnect detected - auto-saving logs');
     this.saveToStorage();
-    // Auto-download on disconnect for debugging
-    this.downloadLogs();
+    // Try to send to log server first, fall back to download
+    this.sendToServer().then(sent => {
+      if (!sent) {
+        this.downloadLogs();
+      }
+    });
   }
 
   // Cleanup
