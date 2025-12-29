@@ -341,6 +341,9 @@ export class HostController {
     const id = `enemy_${this.nextEnemyId++}`;
     this.enemyIdMap.set(enemy, id);
 
+    // Store networkId on enemy for PlayerAttackManager to use when broadcasting hits
+    (enemy as Enemy & { networkId: string }).networkId = id;
+
     // Listen for enemy death to clean up
     enemy.once('destroy', () => {
       this.enemyIdMap.delete(enemy);
