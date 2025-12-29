@@ -171,7 +171,13 @@ export const WORLD_CONFIGS: Record<SinWorld, WorldConfig> = {
 
 // Helper to get world config by ID
 export function getWorldConfig(world: SinWorld): WorldConfig {
-  return WORLD_CONFIGS[world];
+  const config = WORLD_CONFIGS[world];
+  // Defensive check: return PRIDE config as fallback if world not found
+  if (!config) {
+    console.warn(`[WorldConfig] Unknown world: ${world}, using PRIDE as fallback`);
+    return WORLD_CONFIGS[SinWorld.PRIDE];
+  }
+  return config;
 }
 
 // Get all world IDs in display order

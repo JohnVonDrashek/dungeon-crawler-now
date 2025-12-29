@@ -326,6 +326,13 @@ export class NPC extends Phaser.Physics.Arcade.Sprite {
 // Helper to get random lore for a world
 export function getRandomWorldLore(world: SinWorld): DialogueLine[] {
   const loreOptions = WORLD_LORE[world];
+  // Defensive check: return fallback lore if world not found
+  if (!loreOptions || loreOptions.length === 0) {
+    return [
+      { speaker: 'Lost Soul', text: 'I have wandered these halls for ages...', speakerColor: '#888888' },
+      { speaker: 'Lost Soul', text: 'The memories fade, but the regret remains.', speakerColor: '#888888' },
+    ];
+  }
   const randomIndex = Math.floor(Math.random() * loreOptions.length);
   return loreOptions[randomIndex];
 }
@@ -345,12 +352,17 @@ export function createLostSoulData(world: SinWorld): NPCData {
 
 // Helper to create a Warning Spirit NPC
 export function createWarningSpirit(world: SinWorld): NPCData {
+  // Defensive check: return fallback warning if world not found
+  const warnings = BOSS_WARNINGS[world] || [
+    { speaker: 'Warning Spirit', text: 'Danger awaits above...', speakerColor: '#fbbf24' },
+    { speaker: 'Warning Spirit', text: 'Prepare yourself for the trial ahead.', speakerColor: '#fbbf24' },
+  ];
   return {
     type: NPCType.WARNING_SPIRIT,
     name: 'Warning Spirit',
     texture: 'player',
     tint: 0xfbbf24,
     scale: 0.7,
-    dialogue: BOSS_WARNINGS[world],
+    dialogue: warnings,
   };
 }
