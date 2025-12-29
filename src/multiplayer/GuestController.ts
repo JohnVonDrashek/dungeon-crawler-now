@@ -34,6 +34,7 @@ import {
 import { RemotePlayer } from './RemotePlayer';
 import { Player } from '../entities/Player';
 import { RoomManager } from '../systems/RoomManager';
+import { mpLog } from './DebugLogger';
 
 interface GuestEnemy {
   sprite: Phaser.Physics.Arcade.Sprite;
@@ -193,7 +194,7 @@ export class GuestController {
         break;
       default:
         // Log unknown message types for debugging
-        console.debug('[GuestController] Unknown message type:', (message as SyncMessage).type);
+        mpLog.debug('Guest', `Unknown message type: ${(message as SyncMessage).type}`);
     }
   }
 
@@ -244,7 +245,7 @@ export class GuestController {
 
     // Debug: log when receiving enemy updates
     if (message.enemies.length > 0 && this.guestEnemies.size === 0) {
-      console.log('[GuestController] First enemy update received:', message.enemies.length, 'enemies');
+      mpLog.info('Guest', `First enemy update received: ${message.enemies.length} enemies`);
     }
 
     const seenIds = new Set<string>();
@@ -390,7 +391,7 @@ export class GuestController {
       this.player.gold = gold;
       this.player.recalculateStats();
     } catch (error) {
-      console.error('[GuestController] Failed to deserialize inventory:', error);
+      mpLog.error('Guest', 'Failed to deserialize inventory', error);
     }
   }
 
@@ -477,7 +478,7 @@ export class GuestController {
   private handleSceneChange(message: SceneChangeMessage): void {
     // Validate scene name to prevent arbitrary scene transitions
     if (!message.sceneName || !GuestController.VALID_SCENES.has(message.sceneName)) {
-      console.warn('[GuestController] Invalid scene name:', message.sceneName);
+      mpLog.warn('Guest', `Invalid scene name: ${message.sceneName}`);
       return;
     }
 
@@ -587,7 +588,7 @@ export class GuestController {
     try {
       lootInfo = JSON.parse(message.itemData);
     } catch {
-      console.warn('[GuestController] Failed to parse loot data');
+      mpLog.warn('Guest', 'Failed to parse loot data');
       return;
     }
 

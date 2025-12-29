@@ -41,6 +41,7 @@ import {
   validatePosition,
   MessageRateLimiter,
 } from './MessageValidator';
+import { mpLog } from './DebugLogger';
 
 export class HostController {
   private scene: Phaser.Scene;
@@ -413,14 +414,14 @@ export class HostController {
     this.messageListenerId = networkManager.onMessage((message: SyncMessage, peerId: string) => {
       // Rate limiting check
       if (!this.rateLimiter.checkAllowed()) {
-        console.warn(`[HostController] Rate limited message from ${peerId}`);
+        mpLog.warn('Host', `Rate limited message from ${peerId.substring(0, 8)}`);
         return;
       }
 
       // Validate message structure first
       const msgValidation = validateSyncMessage(message);
       if (!msgValidation.valid) {
-        console.warn(`[HostController] Invalid message from ${peerId}: ${msgValidation.reason}`);
+        mpLog.warn('Host', `Invalid message from ${peerId.substring(0, 8)}: ${msgValidation.reason}`);
         return;
       }
 
@@ -467,7 +468,7 @@ export class HostController {
 
         default:
           // Log unknown message types for debugging
-          console.debug('[HostController] Unknown message type:', message.type);
+          mpLog.debug('Host', `Unknown message type: ${message.type}`);
       }
     });
   }
@@ -476,14 +477,14 @@ export class HostController {
 
   private setupPeerHandlers(): void {
     networkManager.onPeerJoin((peerId: string) => {
-      console.log(`[HostController] Guest joined: ${peerId}`);
+      mpLog.info('Host', `Guest joined: ${peerId.substring(0, 8)}`);
       this.hideWaitingUI();
       this.createRemotePlayer();
       this.sendInitialState();
     });
 
     networkManager.onPeerLeave((peerId: string) => {
-      console.log(`[HostController] Guest left: ${peerId}`);
+      mpLog.info('Host', `Guest left: ${peerId.substring(0, 8)}`);
       this.removeRemotePlayer();
       this.showWaitingUI();
     });
@@ -562,7 +563,7 @@ export class HostController {
     // Validate position bounds
     const boundsValidation = validatePosition(message.x, message.y);
     if (!boundsValidation.valid) {
-      console.warn(`[HostController] Position bounds invalid: ${boundsValidation.reason}`);
+      mpLog.warn('Host', `Position bounds invalid: ${boundsValidation.reason}`);
       return;
     }
 
@@ -575,7 +576,7 @@ export class HostController {
         message.y
       );
       if (!posValidation.valid) {
-        console.warn(`[HostController] Position delta warning: ${posValidation.reason}`);
+        mpLog.warn('Host', `Position delta warning: ${posValidation.reason}`);
         // Don't reject completely - could be legitimate room transition
         // Just log the warning for now
       }
@@ -586,11 +587,11 @@ export class HostController {
     this.remotePlayer.applyPositionUpdate(message);
   }
 
-  private handleGuestHit(message: PlayerHitMessage, peerId: string): void {
+  private handleGuestHit(message: PlayerHitMessage, _peerId: string): void {
     // Validate damage value
     const damageValidation = validateDamage(message.damage);
     if (!damageValidation.valid) {
-      console.warn(`[HostController] Damage validation failed from ${peerId}: ${damageValidation.reason}`);
+      mpLog.warn('Host', `Damage validation failed: ${damageValidation.reason}`);
       return;
     }
 
@@ -600,7 +601,7 @@ export class HostController {
     // Validate enemy ID
     const enemyValidation = validateEnemyId(message.enemyId, validEnemyIds);
     if (!enemyValidation.valid) {
-      console.warn(`[HostController] Enemy validation failed from ${peerId}: ${enemyValidation.reason}`);
+      mpLog.warn('Host', `Enemy validation failed: ${enemyValidation.reason}`);
       return;
     }
 
@@ -1583,7 +1584,7 @@ export class HostController {
       let id = this.enemyIdMap.get(enemy);
       if (!id) {
         id = this.registerEnemy(enemy);
-        console.log('[HostController] Registered new enemy:', id);
+        mpLog.debug('Host', `Registered new enemy: ${id}`);
       }
 
       enemyData.push({

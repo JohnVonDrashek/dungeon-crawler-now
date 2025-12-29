@@ -3,6 +3,7 @@
 import { joinRoom, Room, selfId } from 'trystero';
 import { SyncMessage } from './SyncMessages';
 import { validateRoomCode } from './MessageValidator';
+import { mpLog } from './DebugLogger';
 
 export type ConnectionState = 'disconnected' | 'connecting' | 'waiting' | 'connected' | 'reconnecting';
 
@@ -71,7 +72,9 @@ export class NetworkManager {
   }
 
   private setConnectionState(state: ConnectionState): void {
+    const prev = this._connectionState;
     this._connectionState = state;
+    mpLog.stateChange('Connection', prev, state);
     this.onConnectionStateChangeCallback?.(state);
   }
 
@@ -93,11 +96,12 @@ export class NetworkManager {
 
     getMessage((data, peerId) => {
       const message = data as SyncMessage;
+      mpLog.msgReceived(message.type, peerId);
       this.messageListeners.forEach(callback => {
         try {
           callback(message, peerId);
         } catch (error) {
-          console.error('Message handler error:', error);
+          mpLog.error('Network', 'Message handler error', error);
         }
       });
     });
@@ -114,11 +118,11 @@ export class NetworkManager {
 
       // Host waits for guest to reconnect, guest attempts to reconnect
       if (this._isHost) {
-        console.log('[NetworkManager] Guest disconnected, waiting for reconnect...');
+        mpLog.warn('Network', 'Guest disconnected, waiting for reconnect...');
         this.setConnectionState('waiting');
         this.onPeerLeaveCallback?.(peerId);
       } else {
-        console.log('[NetworkManager] Disconnected from host, attempting reconnect...');
+        mpLog.warn('Network', 'Disconnected from host, attempting reconnect...');
         this.attemptReconnect();
       }
     });
@@ -131,7 +135,7 @@ export class NetworkManager {
     }
 
     if (this.reconnectAttempts >= this.MAX_RECONNECT_ATTEMPTS) {
-      console.log('[NetworkManager] Max reconnect attempts reached, giving up');
+      mpLog.error('Network', 'Max reconnect attempts reached, giving up');
       this.setConnectionState('disconnected');
       this.onPeerLeaveCallback?.('reconnect_failed');
       return;
@@ -139,7 +143,7 @@ export class NetworkManager {
 
     this.reconnectAttempts++;
     this.setConnectionState('reconnecting');
-    console.log(`[NetworkManager] Reconnect attempt ${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS}`);
+    mpLog.info('Network', `Reconnect attempt ${this.reconnectAttempts}/${this.MAX_RECONNECT_ATTEMPTS}`);
 
     // Wait before attempting reconnect
     await new Promise(resolve => setTimeout(resolve, this.RECONNECT_DELAY_MS));
@@ -183,7 +187,7 @@ export class NetworkManager {
           this._isConnected = true;
           this.reconnectAttempts = 0; // Reset on success
           this.setConnectionState('connected');
-          console.log('[NetworkManager] Reconnected successfully!');
+          mpLog.info('Network', 'Reconnected successfully!');
           this.onPeerJoinCallback?.(peerId);
           resolve();
         });
@@ -191,7 +195,7 @@ export class NetworkManager {
 
       await reconnectPromise;
     } catch (error) {
-      console.log('[NetworkManager] Reconnect attempt failed:', error);
+      mpLog.warn('Network', 'Reconnect attempt failed', error);
       // Try again
       this.attemptReconnect();
     }
@@ -202,6 +206,8 @@ export class NetworkManager {
     this._isHost = true;
     this.intentionalDisconnect = false;
     this.reconnectAttempts = 0;
+    mpLog.setRole('HOST');
+    mpLog.info('Network', `Hosting game with code: ${this._roomCode}`);
     this.setConnectionState('connecting');
 
     try {
@@ -237,6 +243,8 @@ export class NetworkManager {
     this._isHost = false;
     this.intentionalDisconnect = false;
     this.reconnectAttempts = 0;
+    mpLog.setRole('GUEST');
+    mpLog.info('Network', `Joining game with code: ${normalizedCode}`);
     this.setConnectionState('connecting');
 
     try {
@@ -281,6 +289,7 @@ export class NetworkManager {
 
   send(message: SyncMessage, targetPeerId?: string): void {
     if (this.sendMessage && this.room) {
+      mpLog.msgSent(message.type);
       this.sendMessage(message, targetPeerId);
     }
   }

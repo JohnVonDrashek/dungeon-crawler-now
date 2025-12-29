@@ -8,6 +8,7 @@ import {
   PlayerHitMessage,
 } from './SyncMessages';
 import { Player } from '../entities/Player';
+import { mpLog } from './DebugLogger';
 
 export class PlayerSync {
   private player: Player;
@@ -46,7 +47,7 @@ export class PlayerSync {
     // Validate position is within reasonable bounds (prevent sending garbage data)
     const MAX_WORLD_SIZE = 10000;
     if (x < 0 || x > MAX_WORLD_SIZE || y < 0 || y > MAX_WORLD_SIZE) {
-      console.warn('[PlayerSync] Position out of bounds, skipping sync');
+      mpLog.warn('Sync', `Position out of bounds: (${x}, ${y})`);
       return;
     }
 
@@ -93,7 +94,7 @@ export class PlayerSync {
 
     // Validate inputs
     if (!enemyId || typeof damage !== 'number' || damage < 0) {
-      console.warn('[PlayerSync] Invalid hit data:', { enemyId, damage });
+      mpLog.warn('Sync', `Invalid hit data: enemyId=${enemyId}, damage=${damage}`);
       return;
     }
 
