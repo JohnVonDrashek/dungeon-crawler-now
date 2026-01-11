@@ -7,8 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "quantize": "node scripts/quantize-palette.cjs",
-    "logs": "node scripts/log-server.cjs"
+    "quantize": "node scripts/quantize-palette.cjs"
   },
   "dependencies": {
     "phaser": "^3.80.1",

@@ -17,8 +17,6 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
-logs/*
-!logs/.gitkeep
 
 # Environment
 .env
@@ -30,3 +28,6 @@ logs/*
 
 # Git worktrees
 .worktrees/
+
+# Playwright
+.playwright-mcp/

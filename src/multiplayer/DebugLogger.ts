@@ -26,7 +26,6 @@ interface SessionInfo {
 const STORAGE_KEY = 'mplog_session';
 const AUTO_SAVE_INTERVAL = 5000; // Save to localStorage every 5 seconds
 const AUTO_SAVE_THRESHOLD = 10; // Also save every 10 new logs
-const LOG_SERVER_URL = 'http://localhost:9001/log';
 
 class MultiplayerDebugLogger {
   private logs: LogEntry[] = [];
@@ -67,11 +66,10 @@ class MultiplayerDebugLogger {
     // Set up keyboard shortcut
     this.setupKeyboardShortcut();
 
-    // Save on page unload - use sendBeacon for reliable delivery
+    // Save on page unload
     if (typeof window !== 'undefined') {
       window.addEventListener('beforeunload', () => {
         this.saveToStorage();
-        this.sendBeacon();
       });
     }
   }
@@ -81,10 +79,6 @@ class MultiplayerDebugLogger {
 
     this.autoSaveTimer = setInterval(() => {
       this.saveToStorage();
-      // Also try to send to server periodically
-      if (this.roomCode) {
-        this.sendToServer().catch(() => {});
-      }
     }, AUTO_SAVE_INTERVAL);
   }
 
@@ -417,61 +411,11 @@ class MultiplayerDebugLogger {
     console.log('------------------------\n');
   }
 
-  // Send logs to local log server
-  async sendToServer(): Promise<boolean> {
-    if (typeof fetch === 'undefined') return false;
-
-    try {
-      const response = await fetch(LOG_SERVER_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          roomCode: this.roomCode,
-          role: this.role,
-          sessionId: this.sessionId,
-          content: this.exportLogs(),
-        }),
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        this.log('info', 'Logger', `Logs sent to server: ${result.filename}`);
-        return true;
-      }
-      return false;
-    } catch {
-      // Server not running - silently fail
-      return false;
-    }
-  }
-
-  // Send logs via beacon (works during page unload)
-  sendBeacon(): boolean {
-    if (typeof navigator === 'undefined' || !navigator.sendBeacon) return false;
-
-    try {
-      const data = JSON.stringify({
-        roomCode: this.roomCode,
-        role: this.role,
-        sessionId: this.sessionId,
-        content: this.exportLogs(),
-      });
-      return navigator.sendBeacon(LOG_SERVER_URL, data);
-    } catch {
-      return false;
-    }
-  }
-
   // Auto-save on disconnect (call from NetworkManager)
   onDisconnect(): void {
     this.log('warn', 'Logger', 'Disconnect detected - auto-saving logs');
     this.saveToStorage();
-    // Try to send to log server first, fall back to download
-    this.sendToServer().then(sent => {
-      if (!sent) {
-        this.downloadLogs();
-      }
-    });
+    this.downloadLogs();
   }
 
   // Cleanup
